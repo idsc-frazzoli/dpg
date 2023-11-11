@@ -1,0 +1,62 @@
+states:
+  done:
+    agents: []
+    dynamics: []
+
+  single:
+    agents: [P1]
+    dynamics:
+    - action: {P1: go}
+      cost: {P1: 0}
+      outcomes:
+      - probability: 1.0
+        transitions:
+        - state: done
+          agents: {P1:}
+    - action: {P1: stay}
+      cost: {P1: 1}
+      outcomes:
+      - probability: 1.0
+        transitions:
+        - state: P1
+          agents: {P1: P1}
+
+
+  S1E1:
+    agents: [S1, E1]
+    dynamics:
+    - action: {S1: stay, E1: go}
+      cost: {S1: 1, E1: 0}
+      outcomes:
+      - probability: 1.0
+        transitions:
+        - state: P1
+          agents: {S1: P1}
+        - state: done
+          agents: {E1:}
+
+    - action: {S1: go, E1: stay}
+      cost: {S1: 0, E1: 1}
+      outcomes:
+      - probability: 1.0
+        transitions:
+        - state: single
+          agents: {S1: P1}
+        - state: done
+          agents: {S1:}
+
+    - action: {S1: stay, E1: stay}
+      cost: {S1: 1, E1: 1}
+
+  S12E1:
+    agents: [S1, S2, E1]
+    dynamics:
+    - action: {S1: g, S2: s, E1: s}
+      cost: {S1: 0, S2: 1, E1: 1}
+      outcomes:
+      - probability: 1.0
+        transitions:
+        - state: S12E1
+          agents: {S2: S1, E1: E1}
+        - state: done
+          agents: {S1:}
