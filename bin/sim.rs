@@ -46,10 +46,10 @@ fn visualize_map(world: &World) -> ImageFormat {
     imgbuf
 }
 
-fn visualize_robots(robots: &HashMap<RobotName, Robot>, imgbuf: &mut ImageFormat) {
+fn visualize_robots(robots: &Vec<Robot>, imgbuf: &mut ImageFormat) {
     // create a png of the grid and robots
 
-    for robot in robots.values() {
+    for robot in robots {
         let xy = robot.xy();
         let color = color_from_orientation(robot.orientation());
         let x = xy.x as u32;
@@ -108,7 +108,7 @@ fn create_mp4_from_imgbuf(
 
 fn random_update(
     rng: &mut RNG,
-    robot_name: &RobotName,
+    robot_name: usize,
     robot: &Robot,
     available_actions: &Vec<Actions>,
 ) -> Actions {
@@ -211,11 +211,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             eprint!("robot {i}/{nrobots}\r");
         }
 
-        let name = format!("robot{i}");
-        world.place_random_robot_parking(&name, &mut rng);
+        world.place_random_robot_parking(  &mut rng);
     }
 
-    let mut states: Vec<HashMap<RobotName, Robot>> = Vec::new();
+    let mut states: Vec<Vec<Robot>> = Vec::new();
     states.push(world.robots.clone());
     eprintln!("Simulation of {steps} steps");
 

@@ -172,7 +172,7 @@ impl Robot {
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Cell {
-    pub present: HashSet<RobotName>,
+    pub present: HashSet<usize>,
     pub allowed_directions: HashSet<Orientations>,
     pub allowed_go_backward: bool,
 }
@@ -324,7 +324,7 @@ impl Grid {
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct World {
     pub grid: Grid,
-    pub robots: HashMap<RobotName, Robot>,
+    pub robots: Vec<Robot>,
 }
 
 impl World {
@@ -332,28 +332,22 @@ impl World {
         self.grid.size
     }
 
-    // pub fn random_cell(&self) -> XYCell {
-    //     let x = rand::random::<i16>() % self.grid.size.x;
-    //     let y = rand::random::<i16>() % self.grid.size.y;
-    //     XY {
-    //         x,
-    //         y
-    //     }
-    // }
 
-    pub fn place_random_robot(&mut self, robot_name: &RobotName, rng: &mut RNG) {
+    pub fn place_random_robot(&mut self, rng: &mut RNG) -> usize {
         let coords = self.grid.random_available_coords(rng);
-        let cell = self.grid.cells.get_mut(&coords.xy).unwrap();
-        cell.present.insert(robot_name.clone());
-        let robot = Robot { coords };
-        self.robots.insert(robot_name.clone(), robot);
+        self.place_robot(coords)
     }
-    pub fn place_random_robot_parking(&mut self, robot_name: &RobotName, rng: &mut RNG) {
-        let coords = self.grid.random_available_parking(rng);
+    pub fn place_robot(&mut self, coords: Coords) -> usize {
         let cell = self.grid.cells.get_mut(&coords.xy).unwrap();
-        cell.present.insert(robot_name.clone());
+        let robot_name = self.robots.len();
+        cell.present.insert(robot_name);
         let robot = Robot { coords };
-        self.robots.insert(robot_name.clone(), robot);
+        self.robots.push(robot);
+        robot_name
+    }
+    pub fn place_random_robot_parking(&mut self,  rng: &mut RNG) -> usize {
+        let coords = self.grid.random_available_parking(rng);
+        self.place_robot(coords)
     }
     pub fn valid_coords(&self, coords: &Coords) -> bool {
         let xy = coords.xy;
@@ -371,9 +365,9 @@ impl World {
         nex
     }
     pub fn step_robots(&mut self, f: &FNUpdate, rng: &mut RNG) {
-        let mut next_occupancy: HashMap<XYCell, HashSet<RobotName>> = HashMap::new();
-        let mut proposed_next_coords: HashMap<RobotName, Coords> = HashMap::new();
-        for (robot_name, robot) in self.robots.iter() {
+        let mut next_occupancy: HashMap<XYCell, HashSet<usize>> = HashMap::new();
+        let mut proposed_next_coords: Vec<Coords> = Vec::new();
+        for (a, robot) in self.robots.iter().enumerate() {
 
             // all the actions that could be taken
             let mut all_actions = vec![Actions::Forward, Actions::TurnLeft, Actions::TurnRight];
@@ -393,27 +387,27 @@ impl World {
             // if available_actions.is_empty() {
             available_actions.push(Actions::Wait);
             // }
-            let action = f(rng, robot_name, robot, &available_actions);
+            let action = f(rng, a, robot, &available_actions);
 
             let nex = self.next_coords_ref(&robot.coords, action);
 
             // eprintln!("{} @{:?} available {:?}: chosen {:?}  -> {:?}", robot_name, robot.coords, available_actions, action , nex);
             if let std::collections::hash_map::Entry::Vacant(e) = next_occupancy.entry(nex.xy) {
                 let mut set = HashSet::new();
-                set.insert(robot_name.clone());
+                set.insert(a);
                 e.insert(set);
             } else {
                 let set = next_occupancy.get_mut(&nex.xy).unwrap();
-                set.insert(robot_name.clone());
+                set.insert(a);
             }
-            proposed_next_coords.insert(robot_name.clone(), nex);
+            proposed_next_coords.push(nex);
         }
-        for (robot_name, robot) in self.robots.iter_mut() {
-            let proposed_next_coord = proposed_next_coords.get(robot_name).unwrap();
+        for (a, robot) in self.robots.iter_mut().enumerate() {
+            let proposed_next_coord = proposed_next_coords[a];
 
             // check if its empty
             let cell = self.grid.cells.get(&proposed_next_coord.xy).unwrap();
-            if cell.present.contains(robot_name) {
+            if cell.present.contains(&a) {
                 // ok
             } else if !cell.empty() {
                 // eprintln!("{}: {:?} -> {:?} blocked", robot_name, robot.coords, proposed_next_coord);
@@ -422,12 +416,12 @@ impl World {
 
             if robot.coords.xy != proposed_next_coord.xy {
                 let old_cell = self.grid.cells.get_mut(&robot.coords.xy).unwrap();
-                old_cell.present.retain(|x| x != robot_name);
+                old_cell.present.retain(|x| *x != a);
                 let cell = self.grid.cells.get_mut(&proposed_next_coord.xy).unwrap();
-                cell.present.insert(robot_name.clone());
+                cell.present.insert(a);
             }
 
-            robot.coords = *proposed_next_coord;
+            robot.coords = proposed_next_coord;
         }
         //
         // // eprintln!("Step robots");
@@ -449,16 +443,16 @@ pub fn next_coords(coord: &Coords, action: Actions) -> Coords {
             let xy = coord.xy + v;
 
             Coords {
-                xy ,
+                xy,
                 orientation: coord.orientation,
             }
         }
         Actions::Backward => {
             let v = coord.orientation.vector();
-            let xy =  coord.xy -v;
+            let xy = coord.xy - v;
 
             Coords {
-                xy ,
+                xy,
                 orientation: coord.orientation,
             }
         }
@@ -522,7 +516,7 @@ pub enum Actions {
     Backward,
 }
 
-pub type FNUpdate = dyn Fn(&mut RNG, &RobotName, &Robot, &Vec<Actions>) -> Actions;
+pub type FNUpdate = dyn Fn(&mut RNG, usize, &Robot, &Vec<Actions>) -> Actions;
 
 pub fn blank_grid(size: XY<i16>) -> HashMap<XYCell, Cell> {
     let mut grid = HashMap::new();
@@ -546,14 +540,14 @@ pub fn blank_grid(size: XY<i16>) -> HashMap<XYCell, Cell> {
 
 impl World {
     pub fn new(grid: Grid) -> Self {
-        let robots = HashMap::new();
+        let robots = Vec::new();
         Self { grid, robots }
     }
     pub fn blank(size: Size) -> Self {
         let grid = Grid::new(size);
         World {
             grid,
-            robots: HashMap::new(),
+            robots: Vec::new(),
         }
     }
 }
