@@ -2,8 +2,10 @@
 
 mod app;
 mod coords;
-pub use coords::*;
 pub use app::WorldViewApp;
+pub use coords::*;
+mod blocks;
+pub use blocks::*;
 
 // pub fn add(left: usize, right: usize) -> usize {
 //     left + right

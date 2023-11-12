@@ -38,9 +38,15 @@ impl WorldViewApp {
     }
 }
 
-fn create_texture_from_bitmap(ctx: &egui::Context, width: usize, height: usize, data: Vec<u8>) -> TextureHandle {
+fn create_texture_from_bitmap(
+    ctx: &egui::Context,
+    width: usize,
+    height: usize,
+    data: Vec<u8>,
+) -> TextureHandle {
     let image = ColorImage::from_gray([width, height], data.as_ref());
-    let texture_handle: TextureHandle = ctx.load_texture("random_bitmap", image, TextureOptions::default());
+    let texture_handle: TextureHandle =
+        ctx.load_texture("random_bitmap", image, TextureOptions::default());
     texture_handle
 }
 
@@ -74,11 +80,11 @@ impl eframe::App for WorldViewApp {
         });
 
         let bitmap = generate_random_bitmap(128, 128); // Adjust the size as needed
-            let texture_id: TextureHandle = create_texture_from_bitmap(&ctx, 128, 128, bitmap);
-            let sized_texture = egui::load::SizedTexture {
-                    id: texture_id.id(),
-                    size: egui::Vec2::new(200.0, 200.0),
-                };
+        let texture_id: TextureHandle = create_texture_from_bitmap(&ctx, 128, 128, bitmap);
+        let sized_texture = egui::load::SizedTexture {
+            id: texture_id.id(),
+            size: egui::Vec2::new(200.0, 200.0),
+        };
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
@@ -104,9 +110,7 @@ impl eframe::App for WorldViewApp {
 
             // ui.add( |ui| ui.image(texture_id) );
 
-
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-
                 ui.image(ImageSource::Texture(sized_texture));
                 powered_by_egui_and_eframe(ui);
                 egui::warn_if_debug_build(ui);
