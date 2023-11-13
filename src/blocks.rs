@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{Cell, Grid, Orientations, Size, XY, XYCell};
+use crate::{Cell, Grid, Orientations, Size, XYCell, XY};
 
 pub enum BlockType {
     Empty,
@@ -51,19 +51,27 @@ impl Block {
                 let cxy = XY::new(x, 1);
                 let cimmission = XY::new(x, 0);
                 let mut parking_cell_north = Cell::new();
+                parking_cell_north.is_parking = true;
                 parking_cell_north.set_allowed(Orientations::NORTH);
                 parking_cell_north.set_allowed_go_backward(true);
                 basic.grid.replace_cell(&cxy, parking_cell_north);
-                basic.grid.cells.get_mut(&cimmission).unwrap().set_allowed(Orientations::NORTH);
+                basic
+                    .grid
+                    .get_cell_mut(&cimmission)
+                    .set_allowed(Orientations::NORTH);
 
                 let cxy = XY::new(x, size.y - 2);
                 let cimmission = XY::new(x, size.y - 1);
                 let mut parking_cell_south = Cell::new();
+                parking_cell_south.is_parking = true;
                 parking_cell_south.set_allowed(Orientations::SOUTH);
                 parking_cell_south.set_allowed_go_backward(true);
                 basic.grid.replace_cell(&cxy, parking_cell_south);
 
-                basic.grid.cells.get_mut(&cimmission).unwrap().set_allowed(Orientations::SOUTH);
+                basic
+                    .grid
+                    .get_cell_mut(&cimmission)
+                    .set_allowed(Orientations::SOUTH);
             }
         }
         // do the same for y
@@ -72,19 +80,27 @@ impl Block {
                 let cxy = XY::new(1, y);
                 let cimmission = XY::new(0, y);
                 let mut parking_cell_west = Cell::new();
+                parking_cell_west.is_parking = true;
                 parking_cell_west.set_allowed(Orientations::WEST);
                 parking_cell_west.set_allowed_go_backward(true);
                 basic.grid.replace_cell(&cxy, parking_cell_west);
-                basic.grid.cells.get_mut(&cimmission).unwrap().set_allowed(Orientations::WEST);
+                basic
+                    .grid
+                    .get_cell_mut(&cimmission)
+                    .set_allowed(Orientations::WEST);
 
                 let cxy = XY::new(size.x - 2, y);
                 let cimmission = XY::new(size.x - 1, y);
                 let mut parking_cell_east = Cell::new();
+                parking_cell_east.is_parking = true;
                 parking_cell_east.set_allowed(Orientations::EAST);
                 parking_cell_east.set_allowed_go_backward(true);
                 basic.grid.replace_cell(&cxy, parking_cell_east);
 
-                basic.grid.cells.get_mut(&cimmission).unwrap().set_allowed(Orientations::EAST);
+                basic
+                    .grid
+                    .get_cell_mut(&cimmission)
+                    .set_allowed(Orientations::EAST);
             }
         }
         basic
@@ -136,8 +152,8 @@ impl BlockMap {
             for y in 0..self.size.y {
                 let block = &self.blocks[x as usize][y as usize];
                 let blockxy = XY::new(x * self.block_size.x, y * self.block_size.y);
-                for (xy, cell) in block.grid.cells.iter() {
-                    let new_xy = blockxy + *xy;
+                for (xy, cell) in block.grid.iterate_cells() {
+                    let new_xy = blockxy + xy;
                     // grid.cells.insert(new_xy, cell.clone());
 
                     grid.replace_cell(&new_xy, cell.clone());

@@ -3,10 +3,14 @@ use std::hash::Hash;
 use std::ops::{Add, Sub};
 
 use num::Num;
+use rand::prelude::IteratorRandom;
 use rand::Rng;
 use rand::rngs::ThreadRng;
 // Rng trait must be in scope to use random methods
 use rand::seq::SliceRandom;
+
+// use std::collections::HashMap;
+use crate::SetSampler;
 
 pub type RNG = ThreadRng;
 // const WORLD_SIZE: usize = 128;
@@ -91,7 +95,8 @@ pub struct XY<T> {
 }
 
 impl<T> XY<T>
-    where T: Ord + Num
+    where
+        T: Ord + Num,
 {
     pub fn in_bounds(&self, p: XY<T>) -> bool {
         return p.x >= T::zero() && p.y >= T::zero() && p.x < self.x && p.y < self.y;
@@ -111,7 +116,6 @@ impl<T> Add for XY<T>
         }
     }
 }
-
 
 impl<T> Sub for XY<T>
     where
@@ -152,8 +156,8 @@ pub type RobotName = String;
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
 pub struct Coords {
-    xy: XYCell,
-    orientation: Orientations,
+    pub xy: XYCell,
+    pub orientation: Orientations,
 }
 
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
@@ -175,6 +179,8 @@ pub struct Cell {
     pub present: HashSet<usize>,
     pub allowed_directions: HashSet<Orientations>,
     pub allowed_go_backward: bool,
+    pub is_parking: bool,
+    pub is_charging: bool,
 }
 
 impl Cell {
@@ -190,6 +196,7 @@ impl Cell {
     pub fn set_allowed(&mut self, orientation: Orientations) {
         self.allowed_directions.insert(orientation);
     }
+
     pub fn set_allowed_go_backward(&mut self, allowed: bool) {
         self.allowed_go_backward = allowed;
     }
@@ -206,31 +213,57 @@ impl Cell {
             present: HashSet::new(),
             allowed_directions: HashSet::new(),
             allowed_go_backward: false,
+            is_parking: false,
+            is_charging: false,
         }
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct Grid {
     pub size: XY<i16>,
-    pub cells: HashMap<XYCell, Cell>,
-    traversable_cells: Vec<XYCell>,
+    pub cells: Vec<Vec<Cell>>,
+    traversable_cells: SetSampler<XYCell>,
+    pub empty_parking_cells: SetSampler<XYCell>,
+    empty_traversable_cells: SetSampler<XYCell>,
+    // empty_cells: HashSet<XYCell>,
+}
+
+pub fn sample_from_hashset<T>(s: &HashSet<T>, rng: &mut RNG) -> T
+    where
+        T: Copy,
+{
+    *s.iter().choose(rng).unwrap()
 }
 
 impl Grid {
     pub fn new(size: XY<i16>) -> Self {
         let cells = blank_grid(size);
-        let traversable_cells = Vec::new();
         Self {
             size,
             cells,
-            traversable_cells,
+            empty_parking_cells: SetSampler::new(),
+            traversable_cells: SetSampler::new(),
+            empty_traversable_cells: SetSampler::new(),
         }
+    }
+
+    pub fn iterate_cells(&self) -> impl Iterator<Item=(XYCell, &Cell)> {
+        self.size
+            .iterate_xy()
+            .map(move |xy| (xy, &self.cells[xy.x as usize][xy.y as usize]))
+    }
+
+    pub fn get_cell_mut(&mut self, xy: &XYCell) -> &mut Cell {
+        &mut self.cells[xy.x as usize][xy.y as usize]
+    }
+    pub fn get_cell(&self, xy: &XYCell) -> &Cell {
+        &self.cells[xy.x as usize][xy.y as usize]
     }
 
     pub fn num_vacant_cells(&self) -> usize {
         let mut count = 0;
-        for cell in self.cells.values() {
+        for (xy, cell) in self.iterate_cells() {
             if cell.traversable() && cell.empty() {
                 count += 1;
             }
@@ -265,63 +298,77 @@ impl Grid {
     }
 
     fn add_traversable(&mut self, xy: &XYCell, direction: Orientations) {
-        let cell = self.cells.get_mut(xy).unwrap();
-        if cell.allowed_directions.is_empty() {
-            self.traversable_cells.push(*xy);
-        }
+        let cell = self.get_cell_mut(xy);
+        let was_not_traversable = cell.allowed_directions.is_empty();
+
         cell.allowed_directions.insert(direction);
+
+        if was_not_traversable {
+            self.traversable_cells.insert(*xy);
+        }
     }
     pub fn random_available_coords(&self, rng: &mut ThreadRng) -> Coords {
-        if self.traversable_cells.is_empty() {
+        if self.empty_traversable_cells.is_empty() {
             panic!("No traversable cells");
         }
         loop {
-            let xy = self.traversable_cells.choose(rng).unwrap();
-            let cell = self.cells.get(xy).unwrap();
+            let xy = self.empty_traversable_cells.get_random().unwrap();
+            let cell = self.get_cell(&xy);
 
             if cell.empty() && cell.traversable() {
                 let orientation = cell.random_direction();
 
-                return Coords {
-                    xy: *xy,
-                    orientation,
-                };
+                return Coords { xy, orientation };
             }
         }
     }
+
     pub fn random_available_parking(&self, rng: &mut ThreadRng) -> Coords {
-        if self.traversable_cells.is_empty() {
-            panic!("No traversable cells");
+        if self.empty_parking_cells.is_empty() {
+            panic!("No empty parking cells");
         }
-        loop {
-            let xy = self.traversable_cells.choose(rng).unwrap();
-            let cell = self.cells.get(xy).unwrap();
+        let xy = self.empty_parking_cells.get_random().unwrap();
+        let cell = self.get_cell(&xy);
+        assert!(cell.is_parking);
 
-            if cell.empty() && cell.traversable() && cell.allowed_go_backward {
-                let orientation = cell.random_direction();
+        let orientation = cell.random_direction();
 
-                return Coords {
-                    xy: *xy,
-                    orientation,
-                };
-            }
-        }
+        return Coords { xy, orientation };
     }
+
     pub fn replace_cell(&mut self, xy: &XYCell, cell: Cell) {
-        if self.cells.contains_key(xy) {
-            self.cells.remove(xy);
-            if self.traversable_cells.contains(xy) {
-                self.traversable_cells.retain(|x| x != xy);
+        let prev_cell = self.get_cell_mut(xy);
+
+        let prev_traversable = prev_cell.traversable();
+        let now_traversable = cell.traversable();
+
+        let prev_parking = prev_cell.is_parking;
+        let now_parking = cell.is_parking;
+
+        *prev_cell = cell;
+
+        match (prev_traversable, now_traversable) {
+            (true, false) => {
+                self.traversable_cells.remove(*xy);
             }
+            (false, true) => {
+                self.traversable_cells.insert(*xy);
+            }
+            _ => {}
         }
-        if cell.traversable() {
-            self.traversable_cells.push(*xy);
+        match (prev_parking, now_parking) {
+            (true, false) => {
+                self.empty_parking_cells.remove(*xy);
+            }
+            (false, true) => {
+                self.empty_parking_cells.insert(*xy);
+            }
+            _ => {}
         }
-        self.cells.insert(*xy, cell);
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct World {
     pub grid: Grid,
     pub robots: Vec<Robot>,
@@ -332,20 +379,19 @@ impl World {
         self.grid.size
     }
 
-
     pub fn place_random_robot(&mut self, rng: &mut RNG) -> usize {
         let coords = self.grid.random_available_coords(rng);
         self.place_robot(coords)
     }
     pub fn place_robot(&mut self, coords: Coords) -> usize {
-        let cell = self.grid.cells.get_mut(&coords.xy).unwrap();
+        let cell = self.grid.get_cell_mut(&coords.xy);
         let robot_name = self.robots.len();
         cell.present.insert(robot_name);
         let robot = Robot { coords };
         self.robots.push(robot);
         robot_name
     }
-    pub fn place_random_robot_parking(&mut self,  rng: &mut RNG) -> usize {
+    pub fn place_random_robot_parking(&mut self, rng: &mut RNG) -> usize {
         let coords = self.grid.random_available_parking(rng);
         self.place_robot(coords)
     }
@@ -354,7 +400,7 @@ impl World {
         if !self.grid.size.in_bounds(xy) {
             return false;
         }
-        let cell = self.grid.cells.get(&xy).unwrap();
+        let cell = self.grid.get_cell(&xy);
         cell.is_allowed(coords.orientation)
     }
     pub fn next_coords_ref(&self, coords: &Coords, action: Actions) -> Coords {
@@ -365,13 +411,23 @@ impl World {
         nex
     }
     pub fn step_robots(&mut self, f: &FNUpdate, rng: &mut RNG) {
-        let mut next_occupancy: HashMap<XYCell, HashSet<usize>> = HashMap::new();
-        let mut proposed_next_coords: Vec<Coords> = Vec::new();
-        for (a, robot) in self.robots.iter().enumerate() {
+        // let mut next_occupancy: HashMap<XYCell, HashSet<usize>> = HashMap::new();
 
+        let mut next_occ: Vec<Vec<Option<HashSet<usize>>>> = Vec::with_capacity(self.grid.size.x as usize);
+        let mut proposed_next_coords: Vec<Coords> = Vec::with_capacity(self.robots.len());
+
+        for _ in 0..self.grid.size.x {
+            let mut row = Vec::with_capacity(self.grid.size.y as usize);
+            for _ in 0..self.grid.size.y  {
+                row.push(None);
+            }
+            next_occ.push(row);
+        }
+
+        for (a, robot) in self.robots.iter().enumerate() {
             // all the actions that could be taken
             let mut all_actions = vec![Actions::Forward, Actions::TurnLeft, Actions::TurnRight];
-            let cell = self.grid.cells.get(&robot.coords.xy).unwrap();
+            let cell = self.grid.get_cell_mut(&robot.coords.xy);
             if cell.allowed_go_backward {
                 all_actions.push(Actions::Backward);
             }
@@ -390,23 +446,25 @@ impl World {
             let action = f(rng, a, robot, &available_actions);
 
             let nex = self.next_coords_ref(&robot.coords, action);
+            let place = next_occ[nex.xy.x as usize][nex.xy.y as usize].get_or_insert_with(|| HashSet::new());
+            place.insert(a);
 
-            // eprintln!("{} @{:?} available {:?}: chosen {:?}  -> {:?}", robot_name, robot.coords, available_actions, action , nex);
-            if let std::collections::hash_map::Entry::Vacant(e) = next_occupancy.entry(nex.xy) {
-                let mut set = HashSet::new();
-                set.insert(a);
-                e.insert(set);
-            } else {
-                let set = next_occupancy.get_mut(&nex.xy).unwrap();
-                set.insert(a);
-            }
+            // // eprintln!("{} @{:?} available {:?}: chosen {:?}  -> {:?}", robot_name, robot.coords, available_actions, action , nex);
+            // if let std::collections::hash_map::Entry::Vacant(e) = next_occupancy.entry(nex.xy) {
+            //     let mut set = HashSet::new();
+            //     set.insert(a);
+            //     e.insert(set);
+            // } else {
+            //     let set = next_occupancy.get_mut(&nex.xy).unwrap();
+            //     set.insert(a);
+            // }
             proposed_next_coords.push(nex);
         }
         for (a, robot) in self.robots.iter_mut().enumerate() {
             let proposed_next_coord = proposed_next_coords[a];
 
             // check if its empty
-            let cell = self.grid.cells.get(&proposed_next_coord.xy).unwrap();
+            let cell = self.grid.get_cell_mut(&proposed_next_coord.xy);
             if cell.present.contains(&a) {
                 // ok
             } else if !cell.empty() {
@@ -415,9 +473,9 @@ impl World {
             }
 
             if robot.coords.xy != proposed_next_coord.xy {
-                let old_cell = self.grid.cells.get_mut(&robot.coords.xy).unwrap();
+                let old_cell = self.grid.get_cell_mut(&robot.coords.xy);
                 old_cell.present.retain(|x| *x != a);
-                let cell = self.grid.cells.get_mut(&proposed_next_coord.xy).unwrap();
+                let cell = self.grid.get_cell_mut(&proposed_next_coord.xy);
                 cell.present.insert(a);
             }
 
@@ -518,21 +576,16 @@ pub enum Actions {
 
 pub type FNUpdate = dyn Fn(&mut RNG, usize, &Robot, &Vec<Actions>) -> Actions;
 
-pub fn blank_grid(size: XY<i16>) -> HashMap<XYCell, Cell> {
-    let mut grid = HashMap::new();
+pub fn blank_grid(size: XY<i16>) -> Vec<Vec<Cell>> {
+    let mut grid = Vec::new();
 
-    for x in 0..size.x {
-        for y in 0..size.y {
-            let xy = XY {
-                x: x as i16,
-                y: y as i16,
-            };
-            // let present = HashSet::new();
-            // let allowed_directions = HashSet::new();
-            // vec![Orientations::NORTH, Orientations::SOUTH, Orientations::WEST, Orientations::EAST];
+    for _ in 0..size.x {
+        let mut row = Vec::new();
+        for _ in 0..size.y {
             let cell = Cell::new();
-            grid.insert(xy, cell);
+            row.push(cell);
         }
+        grid.push(row);
     }
 
     grid
