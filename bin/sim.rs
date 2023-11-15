@@ -1,31 +1,34 @@
 extern crate image;
 
-use std::cmp::min;
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::error::Error;
 use std::format;
-use std::io;
 // Image processing library
 use std::process::Command;
 
 use image::{ImageBuffer, Rgb};
 use indicatif::{ProgressBar, ProgressStyle};
-use rand::rngs::mock::StepRng;
-use rand::seq::SliceRandom;
+use pathfinding::prelude::astar;
 use rand::Rng;
+use rand::seq::SliceRandom;
 use rusttype::{Font, Scale};
 
-use dpg::Grid;
 use dpg::{
-    Actions, Block, BlockMap, Cell, Coords, Orientations, Robot, RobotName, Size, World, RNG, XY,
+    Actions, Block, BlockMap, Coords, Orientations, RNG, Robot, Size, World, XY,
 };
+use dpg::Grid;
+
+const COLOR_RED: Rgb<u8> = image::Rgb([255, 0, 0]);
+const COLOR_GREEN: Rgb<u8> = image::Rgb([0, 255, 0]);
+const COLOR_BLUE: Rgb<u8> = image::Rgb([0, 0, 255]);
+const COLOR_YELLOW: Rgb<u8> = image::Rgb([255, 255, 0]);
 
 fn color_from_orientation(orientation: Orientations) -> Rgb<u8> {
     match orientation {
-        Orientations::NORTH => image::Rgb([255, 50, 50]),
-        Orientations::SOUTH => image::Rgb([50, 255, 50]),
-        Orientations::EAST => image::Rgb([150, 150, 255]),
-        Orientations::WEST => image::Rgb([255, 255, 50]),
+        Orientations::NORTH => COLOR_RED,
+        Orientations::SOUTH => COLOR_GREEN,
+        Orientations::EAST => COLOR_BLUE,
+        Orientations::WEST => COLOR_YELLOW,
     }
 }
 
@@ -34,6 +37,7 @@ type ImageFormat = ImageBuffer<Rgb<u8>, Vec<u8>>;
 fn visualize_map(world: &World) -> ImageFormat {
     let size = world.size();
     let mut imgbuf = image::ImageBuffer::new(size.x as u32, size.y as u32);
+    imgbuf.fill(0);
 
     for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
         let xy = XY {
@@ -41,13 +45,7 @@ fn visualize_map(world: &World) -> ImageFormat {
             y: y as i16,
         };
         let cell = world.grid.get_cell(&xy);
-        let color = if cell.is_parking {
-            image::Rgb::from([0_u8, 55_u8, 155_u8])
-        } else if cell.traversable() {
-            image::Rgb::from([55_u8, 55_u8, 55_u8])
-        } else {
-            image::Rgb::from([5_u8, 125_u8, 5_u8])
-        };
+        let color = cell.color;
         *pixel = color;
     }
     imgbuf
@@ -59,11 +57,12 @@ fn visualize_robots(grid: &Grid, robots: &Vec<Robot>, imgbuf: &mut ImageFormat) 
     for robot in robots {
         let xy = robot.xy();
         let c = grid.get_cell(&xy);
-        let color = if c.is_parking {
-            image::Rgb::from([165_u8, 165_u8, 165_u8])
-        } else {
-            color_from_orientation(robot.orientation())
-        };
+        let color = robot.color;
+        // let color = if c.is_parking {
+        //     image::Rgb::from([165_u8, 165_u8, 165_u8])
+        // } else {
+        //     color_from_orientation(robot.orientation())
+        // };
         let x = xy.x as u32;
         let y = xy.y as u32;
 
@@ -130,22 +129,164 @@ fn random_update(
     chosen
 }
 
+/// Time of day in seconds
+type TimeOfDaySec = f64;
+
+#[derive(Debug)]
+pub struct Objectives {
+    pub home: Coords,
+    pub work: Coords,
+    // pub work_start: TimeOfDaySec,
+    // pub work_end: TimeOfDaySec,
+}
+
+pub enum SimpleAgentStates {
+    TRAVELING_TO_WORK,
+    TRAVELING_TO_HOME,
+}
+
+
+pub struct SimpleAgent {
+    pub objectives: Objectives,
+    pub state: SimpleAgentStates,
+    pub plan: Option<PlanResult>,
+
+}
+
+pub enum PlanResult {
+    Success(VecDeque<Coords>),
+    Failure,
+}
+
+impl SimpleAgent {
+    fn replan(&mut self, start: &Coords, world: &World, goal: Coords) {
+
+        // let start = robot.coords;
+        assert!(world.valid_coords(start));
+        let result = astar(start,
+                           |c|
+                               world.successors(c)
+                                   .into_iter().map(|p| (p, 1)),
+                           |c| goal.dist(c),
+                           |&p| p == goal);
+        if let Some((path, _cost)) = result {
+            let vc = VecDeque::from(path);
+            assert!(vc.front() == Some(start));
+            assert!(vc.back() == Some(&goal));
+            // eprintln!("start: {start:?}  goal: {goal:?}  path length: {:?} \n path: {:?}",
+            //            vc.len(), vc);
+
+            // for (i, c) in vc.iter().enumerate() {
+            //     let action =
+            //         if i != vc.len() - 1 {
+            //             Some(Actions::from_pair(c, &vc[i + 1]).unwrap())
+            //         } else {
+            //             None
+            //         };
+            //     // eprintln!("{}: {:?} action {:?}", i, c, action);
+            //     assert!(world.valid_coords(c));
+            // }
+            self.plan = Some(PlanResult::Success(vc));
+        } else {
+            eprintln!("start: {start:?}  invalid");
+            self.plan = Some(PlanResult::Failure);
+        }
+    }
+
+    fn get_goal(&self) -> Coords {
+        match self.state {
+            SimpleAgentStates::TRAVELING_TO_WORK => self.objectives.work,
+            SimpleAgentStates::TRAVELING_TO_HOME => self.objectives.home,
+        }
+    }
+
+    fn update(&mut self,
+              rng: &mut RNG,
+              name: usize,
+              robot: &Robot,
+              world: &World,
+              available_actions: &Vec<Actions>,
+    ) -> Actions {
+        match self.state {
+            SimpleAgentStates::TRAVELING_TO_WORK => {
+                if robot.coords == self.objectives.work {
+                    self.state = SimpleAgentStates::TRAVELING_TO_HOME;
+                    // eprintln!("{name} arrived at work");
+                    self.plan = None;
+                }
+            }
+            SimpleAgentStates::TRAVELING_TO_HOME => {
+                if robot.coords == self.objectives.home {
+                    // eprintln!("{name} arrived at home");
+                    self.state = SimpleAgentStates::TRAVELING_TO_WORK;
+
+                    self.plan = None;
+                }
+            }
+        }
+        let goal = self.get_goal();
+
+
+        if self.plan.is_none() {
+            self.replan(&robot.coords, world, goal);
+
+            if let Some(PlanResult::Failure) = &self.plan {
+                eprintln!("{name} has failure to plan at {:?}\n actions = {:?}\n{:?}",
+                          robot.coords, available_actions,
+                          self.objectives);
+            }
+        }
+        match &mut self.plan {
+            None => {
+                panic!("plan is none");
+            }
+            Some(PlanResult::Success(path)) => {
+                if path.is_empty() {
+                    eprintln!("path is empty.\n objs: {:?}\n @ {:?}",
+                              self.objectives, robot.coords);
+                }
+                if path.len() >= 2 && path[1] == robot.coords {
+                    path.pop_front();
+                    // eprintln!("path is 1.\n objs: {:?}\n @ {:?}",
+                    //           self.objectives, robot.coords);
+                }
+
+                if path[0] != robot.coords {
+                    eprintln!("#{} I will wait in progressing: = {:?} != robot.coords = {:?}",
+                              name, path[0], robot.coords);
+                    self.plan = None;
+                    eprintln!("{name} needs to replan");
+
+                    return Actions::Wait;
+                } else {
+                    let x = Actions::from_pair(&path[0], &path[1]);
+                    // path.pop_front();
+                    return x.unwrap();
+                }
+            }
+            Some(PlanResult::Failure) => {
+                return Actions::Wait;
+            }
+        }
+    }
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let mut rng: RNG = rand::thread_rng();
-    let s = 7;
-    let s = 4;
+    let s = 3;
+    // let s = 1;
     let ndays = 1.0;
     let ndays = 1.0 / 24.0;
 
-    let map_size = Size::new(32 * s, 24 * s);
+    let map_size = Size::new(8 * s, 6 * s);
     let block_size = Size::new(16, 16);
-    let parking_interval = 1;
+    let parking_interval = 3;
     let robots_density = 0.7;
 
     let mut bl = BlockMap::new(map_size, block_size);
 
     for p in map_size.iterate_xy_interior() {
-        if rng.gen_bool(0.3) {
+        if rng.gen_bool(0.0) {
             continue;
         } else {
             let b = if rng.gen_bool(0.6) {
@@ -165,22 +306,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     eprintln!("{} parking spaces", nparkings);
-    let nrobots = (nparkings as f64 * robots_density) as usize;
-
+    let nrobots = (nparkings as f64 * robots_density / 2.0) as usize;
+    // let nrobots = 16;
     let speed_km_h = 30.0;
     let speed_m_s = speed_km_h * 1000.0 / 3600.0;
     let size_cell_m = 5.0;
     let sim_step_secs = size_cell_m / speed_m_s;
     eprintln!("Simulation step size: {} seconds", sim_step_secs);
-    // let sim_step_secs = 60.0;
     let steps = (ndays * 24.0 * 60.0 * 60.0 / sim_step_secs) as usize;
 
-    // steps = min(steps, 1000);
-    // let mut rng = StepRng::new(2, 1);
     let mut world = World::new(g);
 
     eprintln!("Robot placement: {nrobots} robots");
-    let mut use_coords = Vec::new();
+    // let mut use_coords = Vec::new();
     let ordered = world
         .grid
         .empty_parking_cells
@@ -188,22 +326,50 @@ fn main() -> Result<(), Box<dyn Error>> {
         .clone()
         .into_sorted_vec();
 
+    let mut agents = Vec::new();
+    // let mut objectives = Vec::with_capacity(nrobots);
     for i in 0..nrobots {
-        let xy = ordered[i];
-        let cell = world.grid.get_cell(&xy);
+        let xy_home = ordered[i];
+        let xy_work = ordered[ordered.len() - 1 - i];
 
-        let orientation = cell.random_direction(&mut rng);
+        let cell_home = world.grid.get_cell(&xy_home);
+        let orientation_home = cell_home.random_direction(&mut rng);
+        let coords_home = Coords {
+            xy: xy_home,
+            orientation: orientation_home,
+        };
+
+        let cell_work = world.grid.get_cell(&xy_work);
+        let orientation_work = cell_work.random_direction(&mut rng);
+        let coords_work = Coords {
+            xy: xy_work,
+            orientation: orientation_work,
+        };
+
+        let objs = Objectives {
+            home: coords_home,
+            work: coords_work,
+        };
+        let agent = SimpleAgent {
+            objectives: objs,
+            state: SimpleAgentStates::TRAVELING_TO_WORK,
+            plan: None,
+        };
 
         if i % 10 == 0 {
             eprint!("robot {i}/{nrobots}\r");
         }
 
-        let coords = Coords { xy, orientation };
-        use_coords.push(coords);
+        agents.push(agent);
+
+        world.place_robot(coords_home);
+        //
+        // let coords = Coords { xy: xy_home, orientation: orientation_home };
+        // use_coords.push(coords);
     }
-    for coords in use_coords {
-        world.place_robot(coords);
-    }
+    // for coords in use_coords {
+    //     world.place_robot(coords);
+    // }
 
     let mut states: Vec<Vec<Robot>> = Vec::new();
     states.push(world.robots.clone());
@@ -214,16 +380,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         ProgressStyle::with_template(
             "[{per_sec:10} wait {eta_precise}] {wide_bar} {pos:>7}/{len:7} {msg}",
         )
-        .unwrap()
-        .progress_chars("##-"),
+            .unwrap()
+            .progress_chars("##-"),
     );
 
-    for i in 0..steps {
-        if i % 5 == 0 {
-            pb.set_position(i as u64);
+
+    {
+        let world2 = world.clone();
+        let mut robot_update_function = move |rng: &mut RNG,
+                                              robot_name: usize,
+                                              robot: &Robot,
+                                              available_actions: &Vec<Actions>|
+            agents[robot_name].update(rng, robot_name, robot, &world2, available_actions);
+        for i in 0..steps {
+            if i % 5 == 0 {
+                pb.set_position(i as u64);
+            }
+            world.step_robots(&mut robot_update_function, &mut rng);
+            states.push(world.robots.clone());
         }
-        world.step_robots(&random_update, &mut rng);
-        states.push(world.robots.clone());
     }
     pb.finish();
     eprintln!("Simulation done.");
@@ -243,13 +418,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             ProgressStyle::with_template(
                 "[{per_sec:10} wait {eta_precise}] {wide_bar} {pos:>7}/{len:7} {msg}",
             )
-            .unwrap()
-            .progress_chars("##-"),
+                .unwrap()
+                .progress_chars("##-"),
         );
-
+        const SKIP_FRAMES_VIDEO: usize = 1;
         for (a, worldi) in states.iter().enumerate() {
             pb.inc(1);
-            if a % 4 != 0 {
+            if a % SKIP_FRAMES_VIDEO != 0 {
                 continue;
             }
             let time_of_day = a as f64 * sim_step_secs;
@@ -258,7 +433,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let hours = (time_of_day / 3600.0) as i32;
             let minutes = ((time_of_day - (hours as f64 * 3600.0)) / 60.0) as i32;
             let seconds = (time_of_day - (hours as f64 * 3600.0) - (minutes as f64 * 60.0)) as i32;
-            let time_of_day = format!("{:02}:{:02}:{:02}   {:7} ", hours, minutes, seconds, a,);
+            let time_of_day = format!("{:02}:{:02}:{:02}   {:7} ", hours, minutes, seconds, a, );
 
             let mut imgbuf = map.clone();
             let height = 12.4;
@@ -272,7 +447,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                 &mut imgbuf,
                 image::Rgb([255, 255, 255]),
                 20,
-                20,
+                0,
                 scale,
                 &font,
                 &time_of_day,
@@ -284,12 +459,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         pb.finish();
         eprintln!("Rendering done");
 
-        // create an animation
 
         if !frames.is_empty() {
             eprintln!("Movie");
 
-            create_mp4_from_imgbuf(frames, "output.mp4", 2)?;
+            create_mp4_from_imgbuf(frames, "output.mp4", 4)?;
             eprintln!("Movie done");
         }
     }

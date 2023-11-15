@@ -1,26 +1,18 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::{Add, Sub};
 
 use num::Num;
 use rand::prelude::IteratorRandom;
-use rand::rngs::ThreadRng;
 use rand::Rng;
+use rand::rngs::ThreadRng;
 // Rng trait must be in scope to use random methods
 use rand::seq::SliceRandom;
 
-// use std::collections::HashMap;
 use crate::SetSampler;
 
 pub type RNG = ThreadRng;
-// const WORLD_SIZE: usize = 128;
 
-// const orientation_to_angle: [i32; 4] = [0, 90, 180, 270];
-// const OCCUPIED: bool = true;
-// const FREE: bool = false;
-
-// For choosing a random element from a slice
-// use rand::rngs::mock::StepRng;
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum Orientations {
@@ -43,15 +35,15 @@ impl Orientations {
         }
     }
 
-    fn random() -> Self {
-        let choices = [
-            Orientations::NORTH,
-            Orientations::SOUTH,
-            Orientations::WEST,
-            Orientations::EAST,
-        ];
-        *choices.choose(&mut rand::thread_rng()).unwrap()
-    }
+    // fn random() -> Self {
+    //     let choices = [
+    //         Orientations::NORTH,
+    //         Orientations::SOUTH,
+    //         Orientations::WEST,
+    //         Orientations::EAST,
+    //     ];
+    //     *choices.choose(&mut rand::thread_rng()).unwrap()
+    // }
     pub fn angle(&self) -> u16 {
         match self {
             Orientations::NORTH => 90,
@@ -108,8 +100,8 @@ pub struct XY<T> {
 }
 
 impl<T> XY<T>
-where
-    T: Ord + Num,
+    where
+        T: Ord + Num,
 {
     pub fn in_bounds(&self, p: XY<T>) -> bool {
         return p.x >= T::zero() && p.y >= T::zero() && p.x < self.x && p.y < self.y;
@@ -117,8 +109,8 @@ where
 }
 
 impl<T> Add for XY<T>
-where
-    T: Add<Output = T> + Copy,
+    where
+        T: Add<Output=T> + Copy,
 {
     type Output = Self;
 
@@ -131,8 +123,8 @@ where
 }
 
 impl<T> Sub for XY<T>
-where
-    T: Sub<Output = T> + Copy,
+    where
+        T: Sub<Output=T> + Copy,
 {
     type Output = Self;
 
@@ -151,15 +143,15 @@ impl Size {
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }
-    pub fn iterate(&self) -> impl Iterator<Item = (i16, i16)> {
+    pub fn iterate(&self) -> impl Iterator<Item=(i16, i16)> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| (x, y)))
     }
-    pub fn iterate_xy(&self) -> impl Iterator<Item = Size> {
+    pub fn iterate_xy(&self) -> impl Iterator<Item=Size> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| XY { x, y }))
     }
-    pub fn iterate_xy_interior(&self) -> impl Iterator<Item = Size> {
+    pub fn iterate_xy_interior(&self) -> impl Iterator<Item=Size> {
         let size = *self;
         (1..size.x - 1).flat_map(move |x| (1..size.y - 1).map(move |y| XY { x, y }))
     }
@@ -173,9 +165,21 @@ pub struct Coords {
     pub orientation: Orientations,
 }
 
+impl Coords {
+    pub fn from(xy: XYCell, orientation: Orientations) -> Self {
+        Self { xy, orientation }
+    }
+    pub fn dist(&self, other: &Coords) -> i16 {
+        let dx = self.xy.x - other.xy.x;
+        let dy = self.xy.y - other.xy.y;
+        dx * dx + dy * dy
+    }
+}
+
 #[derive(Hash, Eq, PartialEq, Debug, Clone)]
 pub struct Robot {
-    coords: Coords,
+    pub coords: Coords,
+    pub color: image::Rgb<u8>,
 }
 
 impl Robot {
@@ -191,10 +195,18 @@ impl Robot {
 pub struct Cell {
     pub present: HashSet<usize>,
     pub allowed_directions: [bool; 4],
+    pub allowed_turn_right: [bool; 4],
+    pub allowed_turn_left: [bool; 4],
     pub allowed_go_backward: bool,
     pub is_parking: bool,
     pub is_charging: bool,
+
+    pub color: image::Rgb<u8>,
+
+    /// The block to which this cell belongs
+    pub block: Option<XYCell>,
 }
+
 
 impl Cell {
     pub fn empty(&self) -> bool {
@@ -209,7 +221,6 @@ impl Cell {
     pub fn set_allowed(&mut self, orientation: Orientations) {
         self.allowed_directions[orientation as usize] = true;
     }
-
     pub fn set_allowed_go_backward(&mut self, allowed: bool) {
         self.allowed_go_backward = allowed;
     }
@@ -227,9 +238,13 @@ impl Cell {
         Self {
             present: HashSet::new(),
             allowed_directions: [false; 4],
+            allowed_turn_right: [true; 4],
+            allowed_turn_left: [true; 4],
             allowed_go_backward: false,
             is_parking: false,
             is_charging: false,
+            block: None,
+            color: image::Rgb::from(COLOR_TERRAIN),
         }
     }
 }
@@ -245,13 +260,20 @@ pub struct Grid {
 }
 
 pub fn sample_from_hashset<T>(s: &HashSet<T>, rng: &mut RNG) -> T
-where
-    T: Copy,
+    where
+        T: Copy,
 {
     *s.iter().choose(rng).unwrap()
 }
 
+const COLOR_ROAD: [u8; 3] = [0, 0, 0];
+const COLOR_TERRAIN: [u8; 3] = [0, 40, 0];
+const COLOR_PARKING: [u8; 3] = [0, 120, 120];
+
 impl Grid {
+    pub fn set_valid(&mut self, c: &Coords) {
+        self.get_cell_mut(&c.xy).set_allowed(c.orientation);
+    }
     pub fn new(size: XY<i16>) -> Self {
         let cells = blank_grid(size);
         Self {
@@ -263,7 +285,7 @@ impl Grid {
         }
     }
 
-    pub fn iterate_cells(&self) -> impl Iterator<Item = (XYCell, &Cell)> {
+    pub fn iterate_cells(&self) -> impl Iterator<Item=(XYCell, &Cell)> {
         self.size
             .iterate_xy()
             .map(move |xy| (xy, &self.cells[xy.x as usize][xy.y as usize]))
@@ -289,27 +311,35 @@ impl Grid {
     pub fn draw_north(&mut self, x: i16, y0: i16, y1: i16) {
         assert!(y0 <= y1);
         for y in y0..y1 {
-            self.add_traversable(&XY { x, y }, Orientations::NORTH);
+            let xy = XY { x, y };
+            self.get_cell_mut(&xy).color = image::Rgb::from(COLOR_ROAD);
+            self.add_traversable(&xy, Orientations::NORTH);
         }
     }
     pub fn draw_south(&mut self, x: i16, y0: i16, y1: i16) {
         assert!(y0 <= y1);
         for y in y0..y1 {
-            self.add_traversable(&XY { x, y }, Orientations::SOUTH);
+            let xy = XY { x, y };
+            self.get_cell_mut(&xy).color = image::Rgb::from(COLOR_ROAD);
+            self.add_traversable(&xy, Orientations::SOUTH);
         }
     }
 
     pub fn draw_east(&mut self, y: i16, x0: i16, x1: i16) {
         assert!(x0 <= x1);
         for x in x0..x1 {
-            self.add_traversable(&XY { x, y }, Orientations::EAST);
+            let xy = XY { x, y };
+            self.get_cell_mut(&xy).color = image::Rgb::from(COLOR_ROAD);
+            self.add_traversable(&xy, Orientations::EAST);
         }
     }
 
     pub fn draw_west(&mut self, y: i16, x0: i16, x1: i16) {
         assert!(x0 <= x1);
         for x in x0..x1 {
-            self.add_traversable(&XY { x, y }, Orientations::WEST);
+            let xy = XY { x, y };
+            self.get_cell_mut(&xy).color = image::Rgb::from(COLOR_ROAD);
+            self.add_traversable(&xy, Orientations::WEST);
         }
     }
 
@@ -353,6 +383,20 @@ impl Grid {
         return Coords { xy, orientation };
     }
 
+    pub fn make_parking_cell(&mut self, coords: &Coords) {
+        let mut cell = Cell::new();
+        cell.color = image::Rgb::from(COLOR_PARKING);
+        cell.is_parking = true;
+        cell.allowed_go_backward = true;
+        cell.set_allowed(coords.orientation);
+        self.replace_cell(&coords.xy, cell);
+
+        self.set_valid(&coords);
+
+        let previous = next_coords(&coords, Actions::Backward);
+        self.set_valid(&previous);
+    }
+
     pub fn replace_cell(&mut self, xy: &XYCell, cell: Cell) {
         let prev_cell = self.get_cell_mut(xy);
 
@@ -391,6 +435,16 @@ pub struct World {
     pub robots: Vec<Robot>,
 }
 
+const RobotColors: [[u8;3]; 7] = [
+    [255, 0, 0],
+    [0, 255, 0],
+    [0, 0, 255],
+    [255, 255, 0],
+    [0, 255, 255],
+    [255, 0, 255],
+    [255, 255, 255],
+];
+
 impl World {
     pub fn size(&self) -> Size {
         self.grid.size
@@ -404,7 +458,11 @@ impl World {
         let cell = self.grid.get_cell_mut(&coords.xy);
         let robot_name = self.robots.len();
         cell.present.insert(robot_name);
-        let robot = Robot { coords };
+
+        let i = (coords.xy.x  + coords.xy.y) as usize % RobotColors.len();
+        // sample random color
+        let color = RobotColors[i];
+        let robot = Robot { coords, color: image::Rgb::from(color) };
         self.robots.push(robot);
         robot_name
     }
@@ -422,54 +480,106 @@ impl World {
         cell.is_allowed(coords.orientation)
     }
 
-    pub fn next_coords_ref(&self, coords: &Coords, action: Actions) -> Coords {
-        let mut nex = next_coords(coords, action);
-        let s = self.grid.size;
-        nex.xy.x = (nex.xy.x + s.x) % s.x;
-        nex.xy.y = (nex.xy.y + s.y) % s.y;
-        nex
+    // pub fn next_coords_ref(&self, coords: &Coords, action: Actions) -> Coords {
+    //     let mut nex = next_coords(coords, action);
+    //     let s = self.grid.size;
+    //     nex.xy.x = (nex.xy.x + s.x) % s.x;
+    //     nex.xy.y = (nex.xy.y + s.y) % s.y;
+    //     nex
+    // }
+
+    pub fn allowed_robot_actions_if_empty(&self, coords: &Coords) -> Vec<Actions> {
+        let cell = self.grid.get_cell(&coords.xy);
+
+        let mut all_actions = vec![Actions::Forward];
+
+        if cell.allowed_turn_right[coords.orientation as usize] {
+            all_actions.push(Actions::TurnRight);
+        }
+
+        if cell.allowed_turn_left[coords.orientation as usize] {
+            all_actions.push(Actions::TurnLeft);
+        }
+
+        if cell.allowed_go_backward {
+            all_actions.push(Actions::Backward);
+        }
+
+        // which ones are feasible
+        let mut available_actions = Vec::new();
+        for action in all_actions.iter() {
+            let n = next_coords(&coords, *action);
+            if self.valid_coords(&n) {
+                available_actions.push(*action);
+            }
+        }
+        // if available_actions.is_empty() {
+        available_actions.push(Actions::Wait);
+        available_actions
     }
 
-    pub fn step_robots(&mut self, f: &FNUpdate, rng: &mut RNG) {
+    pub fn successors(&self, coords: &Coords) -> Vec<Coords> {
+        let mut res = Vec::new();
+        let actions = self.allowed_robot_actions_if_empty(coords);
+        for action in actions.iter() {
+            let n = next_coords(&coords, *action);
+            res.push(n);
+        }
+        res
+    }
+    pub fn step_robots(&mut self, f: &mut FNUpdate, rng: &mut RNG) {
         // let mut next_occupancy: HashMap<XYCell, HashSet<usize>> = HashMap::new();
 
-        let mut next_occ: Vec<Vec<Option<HashSet<usize>>>> =
-            Vec::with_capacity(self.grid.size.x as usize);
+        // let mut next_occ: Vec<Vec<Option<HashSet<usize>>>> =
+        //     Vec::with_capacity(self.grid.size.x as usize);
+        //
+        // for _ in 0..self.grid.size.x {
+        //     let mut row = Vec::with_capacity(self.grid.size.y as usize);
+        //     for _ in 0..self.grid.size.y {
+        //         row.push(None);
+        //     }
+        //     next_occ.push(row);
+        // }
+
         let mut proposed_next_coords: Vec<Coords> = Vec::with_capacity(self.robots.len());
 
-        for _ in 0..self.grid.size.x {
-            let mut row = Vec::with_capacity(self.grid.size.y as usize);
-            for _ in 0..self.grid.size.y {
-                row.push(None);
-            }
-            next_occ.push(row);
-        }
 
         for (a, robot) in self.robots.iter().enumerate() {
             // all the actions that could be taken
-            let mut all_actions = vec![Actions::Forward, Actions::TurnLeft, Actions::TurnRight];
-            let cell = self.grid.get_cell_mut(&robot.coords.xy);
-            if cell.allowed_go_backward {
-                all_actions.push(Actions::Backward);
-            }
-
-            // which ones are feasible
-            let mut available_actions = Vec::new();
-            for action in all_actions.iter() {
-                let next_coords = self.next_coords_ref(&robot.coords, *action);
-                if self.valid_coords(&next_coords) {
-                    available_actions.push(*action);
-                }
-            }
-            // if available_actions.is_empty() {
-            available_actions.push(Actions::Wait);
+            // let mut all_actions = vec![Actions::Forward, Actions::TurnLeft, Actions::TurnRight];
+            // let cell = self.grid.get_cell_mut(&robot.coords.xy);
+            // if cell.allowed_go_backward {
+            //     all_actions.push(Actions::Backward);
             // }
-            let action = f(rng, a, robot, &available_actions);
+            //
+            // // which ones are feasible
+            // let mut available_actions = Vec::new();
+            // for action in all_actions.iter() {
+            //     let next_coords = self.next_coords_ref(&robot.coords, *action);
+            //     if self.valid_coords(&next_coords) {
+            //         available_actions.push(*action);
+            //     }
+            // }
+            // // if available_actions.is_empty() {
+            // available_actions.push(Actions::Wait);
+            // }
+            let available_actions = self.allowed_robot_actions_if_empty(&robot.coords);
+            let mut action = f(rng, a, robot, &available_actions);
 
-            let nex = self.next_coords_ref(&robot.coords, action);
-            let place = next_occ[nex.xy.x as usize][nex.xy.y as usize]
-                .get_or_insert_with(|| HashSet::new());
-            place.insert(a);
+            if rng.gen_bool(0.4) {
+                action = Actions::Wait;
+            }
+
+
+            let mut nex = next_coords(&robot.coords, action);
+            let cell = self.grid.get_cell_mut(&robot.coords.xy);
+            // if cell.present.contains(&a) {
+            // } else {
+            //     nex = robot.coords;
+            // }
+            // let place = next_occ[nex.xy.x as usize][nex.xy.y as usize]
+            //     .get_or_insert_with(|| HashSet::new());
+            // place.insert(a);
 
             // // eprintln!("{} @{:?} available {:?}: chosen {:?}  -> {:?}", robot_name, robot.coords, available_actions, action , nex);
             // if let std::collections::hash_map::Entry::Vacant(e) = next_occupancy.entry(nex.xy) {
@@ -482,7 +592,13 @@ impl World {
             // }
             proposed_next_coords.push(nex);
         }
-        for (a, robot) in self.robots.iter_mut().enumerate() {
+        // random permutation of 0, n
+        let mut indices: Vec<usize> = (0..self.robots.len()).collect();
+        indices.shuffle(rng);
+
+
+        for a in indices {
+            let robot = self.robots.get_mut(a).unwrap();
             let proposed_next_coord = proposed_next_coords[a];
 
             // check if its empty
@@ -490,7 +606,7 @@ impl World {
             if cell.present.contains(&a) {
                 // ok
             } else if !cell.empty() {
-                // eprintln!("{}: {:?} -> {:?} blocked", robot_name, robot.coords, proposed_next_coord);
+                // eprintln!("{}: {:?} -> {:?} blocked because cell contains {:?}", a, robot.coords, proposed_next_coord, cell.present);
                 continue;
             }
 
@@ -499,6 +615,8 @@ impl World {
                 old_cell.present.retain(|x| *x != a);
                 let cell = self.grid.get_cell_mut(&proposed_next_coord.xy);
                 cell.present.insert(a);
+
+                assert!(cell.present.len() <= 1);
             }
 
             robot.coords = proposed_next_coord;
@@ -589,14 +707,33 @@ mod test {
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum Actions {
-    Forward,
-    TurnLeft,
-    TurnRight,
-    Wait,
-    Backward,
+    Wait = 0,
+    Forward = 1,
+    TurnLeft = 2,
+    TurnRight = 3,
+    Backward = 4,
 }
 
-pub type FNUpdate = dyn Fn(&mut RNG, usize, &Robot, &Vec<Actions>) -> Actions;
+
+impl Actions {
+    pub fn from_pair(c1: &Coords, c2: &Coords) -> Option<Self> {
+        for action in [
+            Actions::Wait,
+            Actions::Forward,
+            Actions::TurnLeft,
+            Actions::TurnRight,
+            Actions::Backward,
+        ] {
+            let c2_a = next_coords(c1, action);
+            if c2_a == *c2 {
+                return Some(action);
+            }
+        }
+        None
+    }
+}
+
+pub type FNUpdate = dyn FnMut(&mut RNG, usize, &Robot, &Vec<Actions>) -> Actions;
 
 pub fn blank_grid(size: XY<i16>) -> Vec<Vec<Cell>> {
     let mut grid = Vec::new();
