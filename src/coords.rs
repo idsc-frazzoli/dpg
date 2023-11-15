@@ -656,15 +656,17 @@ pub fn next_coords(coord: &Coords, action: Actions) -> Coords {
         }
         Actions::TurnLeft => {
             let orientation = coord.orientation.rotate_left();
+            let xy = coord.xy + orientation.vector();
             Coords {
-                xy: coord.xy,
+                xy,
                 orientation,
             }
         }
         Actions::TurnRight => {
             let orientation = coord.orientation.rotate_right();
+            let xy = coord.xy + orientation.vector();
             Coords {
-                xy: coord.xy,
+                xy,
                 orientation,
             }
         }
