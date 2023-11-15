@@ -45,7 +45,7 @@ impl Block {
             (size.x-1, size.y-1)
         ] {
             for or in 0..4 {
-                // grid.cells[x as usize][y as usize].allowed_turn_left[or] = false;
+                grid.cells[x as usize][y as usize].allowed_turn_left[or] = false;
             }
         }
 
