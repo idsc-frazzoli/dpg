@@ -10,15 +10,15 @@ use std::process::Command;
 
 use image::{ImageBuffer, Rgb};
 use indicatif::{ProgressBar, ProgressStyle};
-use rand::Rng;
 use rand::rngs::mock::StepRng;
 use rand::seq::SliceRandom;
+use rand::Rng;
 use rusttype::{Font, Scale};
 
-use dpg::{
-    Actions, Block, BlockMap, Cell, Coords, Orientations, RNG, Robot, RobotName, Size, World, XY,
-};
 use dpg::Grid;
+use dpg::{
+    Actions, Block, BlockMap, Cell, Coords, Orientations, Robot, RobotName, Size, World, RNG, XY,
+};
 
 fn color_from_orientation(orientation: Orientations) -> Rgb<u8> {
     match orientation {
@@ -41,14 +41,13 @@ fn visualize_map(world: &World) -> ImageFormat {
             y: y as i16,
         };
         let cell = world.grid.get_cell(&xy);
-        let color =
-            if cell.is_parking {
-                image::Rgb::from([0_u8, 55_u8, 155_u8])
-            } else if cell.traversable() {
-                image::Rgb::from([55_u8, 55_u8, 55_u8])
-            } else {
-                image::Rgb::from([5_u8, 125_u8, 5_u8])
-            };
+        let color = if cell.is_parking {
+            image::Rgb::from([0_u8, 55_u8, 155_u8])
+        } else if cell.traversable() {
+            image::Rgb::from([55_u8, 55_u8, 55_u8])
+        } else {
+            image::Rgb::from([5_u8, 125_u8, 5_u8])
+        };
         *pixel = color;
     }
     imgbuf
@@ -60,12 +59,11 @@ fn visualize_robots(grid: &Grid, robots: &Vec<Robot>, imgbuf: &mut ImageFormat) 
     for robot in robots {
         let xy = robot.xy();
         let c = grid.get_cell(&xy);
-        let color =
-            if c.is_parking {
-                image::Rgb::from([165_u8, 165_u8, 165_u8])
-            } else {
-                color_from_orientation(robot.orientation())
-            };
+        let color = if c.is_parking {
+            image::Rgb::from([165_u8, 165_u8, 165_u8])
+        } else {
+            color_from_orientation(robot.orientation())
+        };
         let x = xy.x as u32;
         let y = xy.y as u32;
 
@@ -169,7 +167,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     eprintln!("{} parking spaces", nparkings);
     let nrobots = (nparkings as f64 * robots_density) as usize;
 
-
     let speed_km_h = 30.0;
     let speed_m_s = speed_km_h * 1000.0 / 3600.0;
     let size_cell_m = 5.0;
@@ -182,24 +179,26 @@ fn main() -> Result<(), Box<dyn Error>> {
     // let mut rng = StepRng::new(2, 1);
     let mut world = World::new(g);
 
-
     eprintln!("Robot placement: {nrobots} robots");
     let mut use_coords = Vec::new();
-    let ordered = world.grid.empty_parking_cells.queue.clone().into_sorted_vec();
+    let ordered = world
+        .grid
+        .empty_parking_cells
+        .queue
+        .clone()
+        .into_sorted_vec();
 
     for i in 0..nrobots {
         let xy = ordered[i];
         let cell = world.grid.get_cell(&xy);
 
-        let orientation = cell.random_direction();
+        let orientation = cell.random_direction(&mut rng);
 
         if i % 10 == 0 {
             eprint!("robot {i}/{nrobots}\r");
         }
 
-        // let xy2 = xy.clone();
         let coords = Coords { xy, orientation };
-        // world.place_robot(coords);
         use_coords.push(coords);
     }
     for coords in use_coords {
@@ -215,8 +214,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         ProgressStyle::with_template(
             "[{per_sec:10} wait {eta_precise}] {wide_bar} {pos:>7}/{len:7} {msg}",
         )
-            .unwrap()
-            .progress_chars("##-"),
+        .unwrap()
+        .progress_chars("##-"),
     );
 
     for i in 0..steps {
@@ -244,8 +243,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             ProgressStyle::with_template(
                 "[{per_sec:10} wait {eta_precise}] {wide_bar} {pos:>7}/{len:7} {msg}",
             )
-                .unwrap()
-                .progress_chars("##-"),
+            .unwrap()
+            .progress_chars("##-"),
         );
 
         for (a, worldi) in states.iter().enumerate() {
@@ -259,7 +258,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let hours = (time_of_day / 3600.0) as i32;
             let minutes = ((time_of_day - (hours as f64 * 3600.0)) / 60.0) as i32;
             let seconds = (time_of_day - (hours as f64 * 3600.0) - (minutes as f64 * 60.0)) as i32;
-            let time_of_day = format!("{:02}:{:02}:{:02}   {:7} ", hours, minutes, seconds, a, );
+            let time_of_day = format!("{:02}:{:02}:{:02}   {:7} ", hours, minutes, seconds, a,);
 
             let mut imgbuf = map.clone();
             let height = 12.4;
@@ -281,16 +280,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             visualize_robots(&world.grid, &worldi, &mut imgbuf);
 
             frames.push(imgbuf.clone());
-            // if a == 0 {
-            //     for _ in 0..60 {
-            //         frames.push(imgbuf.clone());
-            //     }
-            // }
-            // if a == states.len() - 1 {
-            //     for _ in 0..60 {
-            //         frames.push(imgbuf.clone());
-            //     }
-            // }
         }
         pb.finish();
         eprintln!("Rendering done");

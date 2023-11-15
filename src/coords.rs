@@ -4,8 +4,8 @@ use std::ops::{Add, Sub};
 
 use num::Num;
 use rand::prelude::IteratorRandom;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 // Rng trait must be in scope to use random methods
 use rand::seq::SliceRandom;
 
@@ -31,6 +31,18 @@ pub enum Orientations {
 }
 
 impl Orientations {
+    pub fn from_index(a: usize) -> Self {
+        match a {
+            0 => Orientations::NORTH,
+            1 => Orientations::SOUTH,
+            2 => Orientations::WEST,
+            3 => Orientations::EAST,
+            _ => {
+                panic!("Invalid index {a}")
+            }
+        }
+    }
+
     fn random() -> Self {
         let choices = [
             Orientations::NORTH,
@@ -60,6 +72,7 @@ impl Orientations {
             }
         }
     }
+
     pub fn vector(&self) -> XY<i16> {
         match self {
             Orientations::NORTH => XY { x: 0, y: 1 },
@@ -95,8 +108,8 @@ pub struct XY<T> {
 }
 
 impl<T> XY<T>
-    where
-        T: Ord + Num,
+where
+    T: Ord + Num,
 {
     pub fn in_bounds(&self, p: XY<T>) -> bool {
         return p.x >= T::zero() && p.y >= T::zero() && p.x < self.x && p.y < self.y;
@@ -104,8 +117,8 @@ impl<T> XY<T>
 }
 
 impl<T> Add for XY<T>
-    where
-        T: Add<Output=T> + Copy,
+where
+    T: Add<Output = T> + Copy,
 {
     type Output = Self;
 
@@ -118,8 +131,8 @@ impl<T> Add for XY<T>
 }
 
 impl<T> Sub for XY<T>
-    where
-        T: Sub<Output=T> + Copy,
+where
+    T: Sub<Output = T> + Copy,
 {
     type Output = Self;
 
@@ -138,15 +151,15 @@ impl Size {
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }
-    pub fn iterate(&self) -> impl Iterator<Item=(i16, i16)> {
+    pub fn iterate(&self) -> impl Iterator<Item = (i16, i16)> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| (x, y)))
     }
-    pub fn iterate_xy(&self) -> impl Iterator<Item=Size> {
+    pub fn iterate_xy(&self) -> impl Iterator<Item = Size> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| XY { x, y }))
     }
-    pub fn iterate_xy_interior(&self) -> impl Iterator<Item=Size> {
+    pub fn iterate_xy_interior(&self) -> impl Iterator<Item = Size> {
         let size = *self;
         (1..size.x - 1).flat_map(move |x| (1..size.y - 1).map(move |y| XY { x, y }))
     }
@@ -177,7 +190,7 @@ impl Robot {
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct Cell {
     pub present: HashSet<usize>,
-    pub allowed_directions: HashSet<Orientations>,
+    pub allowed_directions: [bool; 4],
     pub allowed_go_backward: bool,
     pub is_parking: bool,
     pub is_charging: bool,
@@ -191,27 +204,29 @@ impl Cell {
         !self.allowed_directions.is_empty()
     }
     pub fn is_allowed(&self, orientation: Orientations) -> bool {
-        self.allowed_directions.contains(&orientation)
+        self.allowed_directions[orientation as usize]
     }
     pub fn set_allowed(&mut self, orientation: Orientations) {
-        self.allowed_directions.insert(orientation);
+        self.allowed_directions[orientation as usize] = true;
     }
 
     pub fn set_allowed_go_backward(&mut self, allowed: bool) {
         self.allowed_go_backward = allowed;
     }
-    pub fn random_direction(&self) -> Orientations {
-        let options = self
-            .allowed_directions
-            .iter()
-            .collect::<Vec<&Orientations>>();
-        **options.choose(&mut rand::thread_rng()).unwrap()
+    pub fn random_direction(&self, rng: &mut RNG) -> Orientations {
+        let mut options = Vec::new();
+        for i in 0..4 {
+            if self.allowed_directions[i] {
+                options.push(i);
+            }
+        }
+        Orientations::from_index(*options.choose(rng).unwrap())
     }
 
     pub fn new() -> Self {
         Self {
             present: HashSet::new(),
-            allowed_directions: HashSet::new(),
+            allowed_directions: [false; 4],
             allowed_go_backward: false,
             is_parking: false,
             is_charging: false,
@@ -230,8 +245,8 @@ pub struct Grid {
 }
 
 pub fn sample_from_hashset<T>(s: &HashSet<T>, rng: &mut RNG) -> T
-    where
-        T: Copy,
+where
+    T: Copy,
 {
     *s.iter().choose(rng).unwrap()
 }
@@ -248,7 +263,7 @@ impl Grid {
         }
     }
 
-    pub fn iterate_cells(&self) -> impl Iterator<Item=(XYCell, &Cell)> {
+    pub fn iterate_cells(&self) -> impl Iterator<Item = (XYCell, &Cell)> {
         self.size
             .iterate_xy()
             .map(move |xy| (xy, &self.cells[xy.x as usize][xy.y as usize]))
@@ -290,6 +305,7 @@ impl Grid {
             self.add_traversable(&XY { x, y }, Orientations::EAST);
         }
     }
+
     pub fn draw_west(&mut self, y: i16, x0: i16, x1: i16) {
         assert!(x0 <= x1);
         for x in x0..x1 {
@@ -301,12 +317,13 @@ impl Grid {
         let cell = self.get_cell_mut(xy);
         let was_not_traversable = cell.allowed_directions.is_empty();
 
-        cell.allowed_directions.insert(direction);
+        cell.set_allowed(direction);
 
         if was_not_traversable {
             self.traversable_cells.insert(*xy);
         }
     }
+
     pub fn random_available_coords(&self, rng: &mut ThreadRng) -> Coords {
         if self.empty_traversable_cells.is_empty() {
             panic!("No traversable cells");
@@ -316,7 +333,7 @@ impl Grid {
             let cell = self.get_cell(&xy);
 
             if cell.empty() && cell.traversable() {
-                let orientation = cell.random_direction();
+                let orientation = cell.random_direction(rng);
 
                 return Coords { xy, orientation };
             }
@@ -331,7 +348,7 @@ impl Grid {
         let cell = self.get_cell(&xy);
         assert!(cell.is_parking);
 
-        let orientation = cell.random_direction();
+        let orientation = cell.random_direction(rng);
 
         return Coords { xy, orientation };
     }
@@ -395,6 +412,7 @@ impl World {
         let coords = self.grid.random_available_parking(rng);
         self.place_robot(coords)
     }
+
     pub fn valid_coords(&self, coords: &Coords) -> bool {
         let xy = coords.xy;
         if !self.grid.size.in_bounds(xy) {
@@ -403,6 +421,7 @@ impl World {
         let cell = self.grid.get_cell(&xy);
         cell.is_allowed(coords.orientation)
     }
+
     pub fn next_coords_ref(&self, coords: &Coords, action: Actions) -> Coords {
         let mut nex = next_coords(coords, action);
         let s = self.grid.size;
@@ -410,15 +429,17 @@ impl World {
         nex.xy.y = (nex.xy.y + s.y) % s.y;
         nex
     }
+
     pub fn step_robots(&mut self, f: &FNUpdate, rng: &mut RNG) {
         // let mut next_occupancy: HashMap<XYCell, HashSet<usize>> = HashMap::new();
 
-        let mut next_occ: Vec<Vec<Option<HashSet<usize>>>> = Vec::with_capacity(self.grid.size.x as usize);
+        let mut next_occ: Vec<Vec<Option<HashSet<usize>>>> =
+            Vec::with_capacity(self.grid.size.x as usize);
         let mut proposed_next_coords: Vec<Coords> = Vec::with_capacity(self.robots.len());
 
         for _ in 0..self.grid.size.x {
             let mut row = Vec::with_capacity(self.grid.size.y as usize);
-            for _ in 0..self.grid.size.y  {
+            for _ in 0..self.grid.size.y {
                 row.push(None);
             }
             next_occ.push(row);
@@ -446,7 +467,8 @@ impl World {
             let action = f(rng, a, robot, &available_actions);
 
             let nex = self.next_coords_ref(&robot.coords, action);
-            let place = next_occ[nex.xy.x as usize][nex.xy.y as usize].get_or_insert_with(|| HashSet::new());
+            let place = next_occ[nex.xy.x as usize][nex.xy.y as usize]
+                .get_or_insert_with(|| HashSet::new());
             place.insert(a);
 
             // // eprintln!("{} @{:?} available {:?}: chosen {:?}  -> {:?}", robot_name, robot.coords, available_actions, action , nex);

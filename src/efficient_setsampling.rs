@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use crate::RNG;
-use priority_queue::{PriorityQueue};
+use priority_queue::PriorityQueue;
 use rand::Rng;
 
 #[derive(Debug, Clone)]
