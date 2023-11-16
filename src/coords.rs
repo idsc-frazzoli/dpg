@@ -63,10 +63,10 @@ impl Orientations {
     // }
     pub fn angle(&self) -> u16 {
         match self {
-            Orientations::NORTH => 90,
-            Orientations::SOUTH => 270,
-            Orientations::WEST => 180,
             Orientations::EAST => 0,
+            Orientations::NORTH => 90,
+            Orientations::WEST => 180,
+            Orientations::SOUTH => 270,
         }
     }
     pub fn from_angle(angle: u16) -> Self {
@@ -92,6 +92,7 @@ impl Orientations {
     }
     //noinspection DuplicatedCode
     pub fn rotate_left(&self) -> Self {
+
         match self {
             Orientations::NORTH => Orientations::WEST,
             Orientations::SOUTH => Orientations::EAST,
@@ -109,12 +110,22 @@ impl Orientations {
         }
     }
 }
+use std::fmt;
+use std::fmt::Display;
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
-pub struct XY<T> {
+
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
+pub struct XY<T>  {
     pub x: T,
     pub y: T,
 }
+
+impl<T> fmt::Debug for XY<T> where T: Display {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "({},{})", self.x, self.y)
+    }
+}
+
 
 impl<T> XY<T>
     where
@@ -812,7 +823,7 @@ mod test {
 }
 
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Actions {
     Wait = 0,
     Forward = 1,
@@ -821,6 +832,18 @@ pub enum Actions {
     Backward = 4,
 }
 
+impl fmt::Debug for Actions {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Actions::Wait => write!(f, "W"),
+            Actions::Forward => write!(f, "F"),
+            Actions::TurnLeft => write!(f, "L"),
+            Actions::TurnRight => write!(f, "R"),
+            Actions::Backward => write!(f, "B"),
+        }
+
+    }
+}
 pub const NUM_ACTIONS: usize = 5;
 pub const NUM_ORIENTATIONS: usize = 4;
 

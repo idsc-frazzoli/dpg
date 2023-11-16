@@ -853,7 +853,9 @@ dependencies = [
  "image",
  "imageproc",
  "indicatif",
+ "itertools 0.12.0",
  "log",
+ "maplit",
  "num",
  "pathfinding",
  "petgraph",
@@ -1504,7 +1506,7 @@ dependencies = [
  "approx",
  "conv",
  "image",
- "itertools",
+ "itertools 0.10.5",
  "nalgebra",
  "num",
  "rand 0.7.3",
@@ -1594,6 +1596,15 @@ name = "itertools"
 version = "0.10.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b0fd2260e829bddf4cb6ea802289de2f86d6a7a690192fbe91b3f46e0f2c8473"
+dependencies = [
+ "either",
+]
+
+[[package]]
+name = "itertools"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "25db6b064527c5d482d0423354fcd07a89a2dfe07b67892e62411946db7f07b0"
 dependencies = [
  "either",
 ]
@@ -1749,6 +1760,12 @@ checksum = "62bb907fe88d54d8d9ce32a3cceab4218ed2f6b7d35617cafe9adf84e43919cb"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "maplit"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e2e65a1a2e43cfcb47a895c4c8b10d1f4a61097f9f254f183aee60cad9c651d"
 
 [[package]]
 name = "matrixmultiply"
