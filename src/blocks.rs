@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{Actions, Cell, Coords, Grid, Orientations, Size, XY, XYCell};
+use rand::seq::SliceRandom;
+
+use crate::{Actions, Cell, Coords, Grid, NUM_ORIENTATIONS, Orientations, RNG, Size, XY, XYCell};
 
 pub enum BlockType {
     Empty,
@@ -26,7 +28,7 @@ impl Block {
         }
     }
 
-    pub fn basic_with_roads(size: Size) -> Self {
+    pub fn basic_with_roads(size: Size, rng: &mut RNG) -> Self {
         let mut grid = Grid::new(size);
 
         // |
@@ -38,40 +40,39 @@ impl Block {
         grid.draw_north(0, 0, size.y);
         grid.draw_south(size.x - 1, 0, size.y);
 
-
-        for (x, y) in [
+        let key = [
             (0, 0),
             (0, size.y - 1),
             (size.x - 1, size.y - 1),
             (size.x - 1, 0),
-        ] {
-            for or in [0, 1, 2, 3] {
-                let cell = grid.get_cell_mut(&XY::new(x, y));
-                cell.allowed_turn_left[or] = false;
-            }
+        ];
+        let chosen = key.choose(rng).unwrap();
+
+
+        // for (x, y) in [
+        //     (0, 0),
+        //     // (0, size.y - 1),
+        //     // (size.x - 1, size.y - 1),
+        //     // (size.x - 1, 0),
+        // ] {
+        let xy = XY::new(chosen.0, chosen.1);
+        for or in 0..NUM_ORIENTATIONS {
+            let cell = grid.get_cell_mut(&xy);
+            cell.ors[or].action_allowed[Actions::TurnLeft as usize] = false;
+            // cell.ors[or].action_allowed[Actions::TurnRight as usize] = false;
+            // cell.allowed_turn_left[or] = false;
         }
-        // let cell = grid.get_cell_mut(&XY::new(0, 0));
-        // cell.set_unallowed(Orientations::WEST);
-
-        // grid.cells[0][0].allowed_turn_left[Orientations::NORTH as usize] = false;
-        // grid.cells[0][0].allowed_turn_left[Orientations::SOUTH as usize] = false;
-        // grid.cells[0][0].allowed_turn_left[Orientations::WEST as usize] = false;
-        // grid.cells[0][0].allowed_turn_left[Orientations::EAST as usize] = false;
-        // grid.cells[0][0].allowed_turn_right[Orientations::NORTH as usize] = true;
-        // grid.cells[0][0].allowed_turn_right[Orientations::SOUTH as usize] = true;
-        // grid.cells[0][0].allowed_turn_right[Orientations::WEST as usize] = true;
-        // grid.cells[0][0].allowed_turn_right[Orientations::EAST as usize] = true;
-
         Self {
             block_type: BlockType::Residential,
             grid,
         }
     }
 
-    pub fn with_parking(size: Size, parking_distance: i16) -> Self {
-        let mut basic = Self::basic_with_roads(size);
+    pub fn with_parking(size: Size, parking_distance: i16, rng: &mut RNG) -> Self {
+        let mut basic = Self::basic_with_roads(size, rng);
+        let buffer_on_corners = 2;
         for x in 0..size.x {
-            if x % parking_distance == 0 && x > 0 && x < size.x - parking_distance {
+            if x % parking_distance == 0 && x > 0 + buffer_on_corners && x < size.x - parking_distance - buffer_on_corners {
                 let cpark = Coords::from(XY::new(x, 1), Orientations::NORTH);
                 basic.grid.make_parking_cell(&cpark);
 
@@ -81,7 +82,7 @@ impl Block {
         }
         // do the same for y
         for y in 0..size.y {
-            if y % parking_distance == 0 && y > 0 && y < size.y - parking_distance {
+            if y % parking_distance == 0 && y > 0 + buffer_on_corners && y < size.y - parking_distance - buffer_on_corners {
                 let cpark = Coords::from(XY::new(1, y), Orientations::EAST);
                 basic.grid.make_parking_cell(&cpark);
 
@@ -194,9 +195,9 @@ mod tests {
         let map_size = Size::new(16, 24);
         let block_size = Size::new(32, 10);
         let mut bl = BlockMap::new(map_size, block_size);
-
+        let mut rng = rand::thread_rng();
         for p in map_size.iterate_xy() {
-            bl.set_block(p, Block::basic_with_roads(block_size));
+            bl.set_block(p, Block::basic_with_roads(block_size, &mut rng));
         }
 
         let g = bl.stitch();

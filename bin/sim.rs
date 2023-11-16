@@ -210,8 +210,8 @@ impl SimpleAgent {
               name: usize,
               robot: &Robot,
               world: &World,
-              available_actions: &Vec<Actions>,
-    ) -> Actions {
+              horizon: usize,
+    ) -> Vec<Actions> {
         match self.state {
             SimpleAgentStates::TRAVELING_TO_WORK => {
                 if robot.coords == self.objectives.work {
@@ -236,8 +236,8 @@ impl SimpleAgent {
             self.replan(&robot.coords, world, goal);
 
             if let Some(PlanResult::Failure) = &self.plan {
-                eprintln!("{name} has failure to plan at {:?}\n actions = {:?}\n{:?}",
-                          robot.coords, available_actions,
+                eprintln!("{name} has failure to plan at {:?}\n{:?}",
+                          robot.coords,
                           self.objectives);
             }
         }
@@ -262,15 +262,20 @@ impl SimpleAgent {
                     self.plan = None;
                     eprintln!("{name} needs to replan");
 
-                    return Actions::Wait;
+                    return vec![Actions::Wait; horizon];
                 } else {
-                    let x = Actions::from_pair(&path[0], &path[1]);
-                    // path.pop_front();
-                    return x.unwrap();
+                    let mut immediate_plan = vec![Actions::Wait; horizon];
+                    let navailable = horizon.min(path.len() - 1);
+                    for i in 0..navailable {
+                        immediate_plan[i] = Actions::from_pair(&path[i], &path[i + 1]).unwrap();
+                    }
+
+
+                    return immediate_plan;
                 }
             }
             Some(PlanResult::Failure) => {
-                return Actions::Wait;
+                return vec![Actions::Wait; horizon];
             }
         }
     }
@@ -278,14 +283,14 @@ impl SimpleAgent {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut rng: RNG = rand::thread_rng();
-    let s = 2;
+    let s = 3;
     // let s = 1;
     let ndays = 1.0;
     let ndays = 1.0 / 24.0;
 
     let map_size = Size::new(8 * s, 6 * s);
     let block_size = Size::new(16, 16);
-    let parking_interval = 3;
+    let parking_interval = 1;
     let robots_density = 0.8;
 
     let mut bl = BlockMap::new(map_size, block_size);
@@ -298,9 +303,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             continue;
         } else {
             let b = if rng.gen_bool(0.6) {
-                Block::with_parking(block_size, parking_interval)
+                Block::with_parking(block_size, parking_interval, &mut rng)
             } else {
-                Block::basic_with_roads(block_size)
+                Block::basic_with_roads(block_size, &mut rng)
             };
             bl.set_block(p, b);
         }
@@ -398,8 +403,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         let mut robot_update_function = move |rng: &mut RNG,
                                               robot_name: usize,
                                               robot: &Robot,
-                                              available_actions: &Vec<Actions>|
-            agents[robot_name].update(rng, robot_name, robot, &world2, available_actions);
+                                              horizon: usize|
+            agents[robot_name].update(rng, robot_name, robot, &world2, horizon);
         for i in 0..steps {
             if i % 5 == 0 {
                 pb.set_position(i as u64);
