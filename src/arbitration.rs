@@ -220,7 +220,6 @@ pub fn arbitration(s: &ArbSetup) -> ArbResult {
                 for d in &to_remove {
                     costs_found.remove(d);
                 }
-
             }
         }
 
@@ -242,15 +241,15 @@ pub fn arbitration(s: &ArbSetup) -> ArbResult {
         // }
     }
 
-        for (costs, solutions) in costs_found.iter() {
-            for (a, solution) in solutions.iter().enumerate() {
-                let plans = solution.iter().map(|r| r.actions.clone()).collect_vec();
-                eprintln!("{costs:?} -> #{a} {plans:?}");
-            }
-
-
-            // eprintln!("{costs:?} -> {solutions:?}");
+    for (costs, solutions) in costs_found.iter() {
+        for (a, solution) in solutions.iter().enumerate() {
+            let plans = solution.iter().map(|r| r.actions.clone()).collect_vec();
+            eprintln!("{costs:?} -> #{a} {plans:?}");
         }
+
+
+        // eprintln!("{costs:?} -> {solutions:?}");
+    }
 
 
     ArbResult {
@@ -270,31 +269,48 @@ mod test {
     #[test]
     fn test_arb1() {
         //
+
+        let E1 = ArbAgent {
+            coord: Coords::from(XYCell::new(1, 0), Orientations::WEST),
+            plan: vec![F, F, F],
+        };
+        let E2 = ArbAgent {
+            coord: Coords::from(XYCell::new(2, 0), Orientations::WEST),
+            plan: vec![F, F, F],
+        };
+        let E3 = ArbAgent {
+            coord: Coords::from(XYCell::new(3, 0), Orientations::WEST),
+            plan: vec![F, F, F],
+        };
+        let N1 = ArbAgent {
+            coord: Coords::from(XYCell::new(-1, 1), Orientations::SOUTH),
+            plan: vec![F, F, F],
+        };
+        let W1 = ArbAgent {
+            coord: Coords::from(XYCell::new(-2, -1), Orientations::EAST),
+            plan: vec![F, F, F],
+        };
+        let S1 = ArbAgent {
+            coord: Coords::from(XYCell::new(0, -2), Orientations::NORTH),
+            plan: vec![F, F, F],
+        };
         let agents = vec![
-            ArbAgent {
-                coord: Coords::from(XYCell::new(1, 0), Orientations::WEST),
-                plan: vec![F, R, F],
-            },
-            ArbAgent {
-                coord: Coords::from(XYCell::new(2, 0), Orientations::WEST),
-                plan: vec![F, R, F],
-            },
+            E1, E2, E3,
+            N1,
+            W1,
+            S1,
             // ArbAgent {
-            //     coord: Coords::from(XYCell::new(3, 0), Orientations::WEST),
+            //     coord: Coords::from(XYCell::new(-1, 1), Orientations::SOUTH),
             //     plan: vec![F, F, F],
             // },
-            ArbAgent {
-                coord: Coords::from(XYCell::new(-1, 1), Orientations::SOUTH),
-                plan: vec![F, F, F],
-            },
-            ArbAgent {
-                coord: Coords::from(XYCell::new(-2, -1), Orientations::EAST),
-                plan: vec![F, F, F],
-            },
-            ArbAgent {
-                coord: Coords::from(XYCell::new(0, -2), Orientations::NORTH),
-                plan: vec![F, F, F],
-            },
+            // ArbAgent {
+            //     coord: Coords::from(XYCell::new(-2, -1), Orientations::EAST),
+            //     plan: vec![F, F, F],
+            // },
+            // ArbAgent {
+            //     coord: Coords::from(XYCell::new(0, -2), Orientations::NORTH),
+            //     plan: vec![F, F, F],
+            // },
         ];
         let setup = ArbSetup { agents };
 
