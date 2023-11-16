@@ -39,10 +39,13 @@ fn visualize_map(world: &World) -> ImageFormat {
     let mut imgbuf = image::ImageBuffer::new(size.x as u32, size.y as u32);
     imgbuf.fill(0);
 
-    for (x, y, pixel) in imgbuf.enumerate_pixels_mut() {
+
+    for (u, v, pixel) in imgbuf.enumerate_pixels_mut() {
+        let v2 = size.y - v as i16 - 1;
         let xy = XY {
-            x: x as i16,
-            y: y as i16,
+            x: u as i16,
+            // y: (size.y - (u as i16)),
+            y: v2 as i16,
         };
         let cell = world.grid.get_cell(&xy);
         let color = cell.color;
@@ -56,15 +59,17 @@ fn visualize_robots(grid: &Grid, robots: &Vec<Robot>, imgbuf: &mut ImageFormat) 
 
     for robot in robots {
         let xy = robot.xy();
-        let c = grid.get_cell(&xy);
+        // let c = grid.get_cell(&xy);
         let color = robot.color;
+        // let color = color_from_orientation(robot.orientation());
         // let color = if c.is_parking {
         //     image::Rgb::from([165_u8, 165_u8, 165_u8])
         // } else {
         //     color_from_orientation(robot.orientation())
         // };
         let x = xy.x as u32;
-        let y = xy.y as u32;
+        // let y = xy.y as u32;
+        let y = grid.size.y as u32 - xy.y as u32 as u32 - 1;
 
         let pixel = imgbuf.get_pixel_mut(x, y);
         *pixel = color;
@@ -273,7 +278,7 @@ impl SimpleAgent {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut rng: RNG = rand::thread_rng();
-    let s = 3;
+    let s = 2;
     // let s = 1;
     let ndays = 1.0;
     let ndays = 1.0 / 24.0;
@@ -281,11 +286,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let map_size = Size::new(8 * s, 6 * s);
     let block_size = Size::new(16, 16);
     let parking_interval = 3;
-    let robots_density = 0.7;
+    let robots_density = 0.8;
 
     let mut bl = BlockMap::new(map_size, block_size);
 
     for p in map_size.iterate_xy_interior() {
+        if p == XY::new(1, 1) || p == XY::new(1, 2) {
+            continue;
+        }
         if rng.gen_bool(0.0) {
             continue;
         } else {

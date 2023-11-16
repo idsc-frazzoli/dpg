@@ -33,21 +33,25 @@ impl Block {
         // |
         // |
         // | > > > >
-        grid.draw_east(0, 0, size.x);
-        grid.draw_west(size.y - 1, 0, size.x);
-        grid.draw_south(0, 0, size.y);
-        grid.draw_north(size.x - 1, 0, size.y);
+        grid.draw_west(0, 0, size.x);
+        grid.draw_east(size.y - 1, 0, size.x);
+        grid.draw_north(0, 0, size.y);
+        grid.draw_south(size.x - 1, 0, size.y);
 
-        for (x,y) in [
+
+        for (x, y) in [
             (0, 0),
-            (0, size.y-1),
-            (size.x-1, 0),
-            (size.x-1, size.y-1)
+            (0, size.y - 1),
+            (size.x - 1, size.y - 1),
+            (size.x - 1, 0),
         ] {
-            for or in 0..4 {
-                grid.cells[x as usize][y as usize].allowed_turn_left[or] = false;
+            for or in [0, 1, 2, 3] {
+                let cell = grid.get_cell_mut(&XY::new(x, y));
+                cell.allowed_turn_left[or] = false;
             }
         }
+        // let cell = grid.get_cell_mut(&XY::new(0, 0));
+        // cell.set_unallowed(Orientations::WEST);
 
         // grid.cells[0][0].allowed_turn_left[Orientations::NORTH as usize] = false;
         // grid.cells[0][0].allowed_turn_left[Orientations::SOUTH as usize] = false;

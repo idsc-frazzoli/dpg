@@ -2,6 +2,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 use std::ops::{Add, Sub};
 
+use num::integer::sqrt;
 use num::Num;
 use rand::prelude::IteratorRandom;
 use rand::Rng;
@@ -170,9 +171,9 @@ impl Coords {
         Self { xy, orientation }
     }
     pub fn dist(&self, other: &Coords) -> i16 {
-        let dx = self.xy.x - other.xy.x;
-        let dy = self.xy.y - other.xy.y;
-        dx * dx + dy * dy
+        let dx = self.xy.x as i32 - other.xy.x as i32;
+        let dy = self.xy.y as i32 - other.xy.y as i32;
+        sqrt(dx * dx + dy * dy) as i16
     }
 }
 
@@ -220,6 +221,9 @@ impl Cell {
     }
     pub fn set_allowed(&mut self, orientation: Orientations) {
         self.allowed_directions[orientation as usize] = true;
+    }
+    pub fn set_unallowed(&mut self, orientation: Orientations) {
+        self.allowed_directions[orientation as usize] = false;
     }
     pub fn set_allowed_go_backward(&mut self, allowed: bool) {
         self.allowed_go_backward = allowed;
@@ -295,6 +299,9 @@ impl Grid {
         &mut self.cells[xy.x as usize][xy.y as usize]
     }
     pub fn get_cell(&self, xy: &XYCell) -> &Cell {
+        if !self.size.in_bounds(*xy) {
+            panic!("Out of bounds {:?} size is {:?}", xy, self.size);
+        }
         &self.cells[xy.x as usize][xy.y as usize]
     }
 
@@ -435,7 +442,7 @@ pub struct World {
     pub robots: Vec<Robot>,
 }
 
-const RobotColors: [[u8;3]; 7] = [
+const RobotColors: [[u8; 3]; 7] = [
     [255, 0, 0],
     [0, 255, 0],
     [0, 0, 255],
@@ -459,7 +466,7 @@ impl World {
         let robot_name = self.robots.len();
         cell.present.insert(robot_name);
 
-        let i = (coords.xy.x  + coords.xy.y) as usize % RobotColors.len();
+        let i = (coords.xy.x + coords.xy.y) as usize % RobotColors.len();
         // sample random color
         let color = RobotColors[i];
         let robot = Robot { coords, color: image::Rgb::from(color) };
@@ -564,19 +571,42 @@ impl World {
             // available_actions.push(Actions::Wait);
             // }
             let available_actions = self.allowed_robot_actions_if_empty(&robot.coords);
+
+
             let mut action = f(rng, a, robot, &available_actions);
 
-            if rng.gen_bool(0.4) {
+            if !available_actions.contains(&action) {
                 action = Actions::Wait;
             }
 
+            if rng.gen_bool(0.4) {
+                                action = Actions::Wait;
+
+            }
 
             let mut nex = next_coords(&robot.coords, action);
-            let cell = self.grid.get_cell_mut(&robot.coords.xy);
-            // if cell.present.contains(&a) {
-            // } else {
-            //     nex = robot.coords;
+
+
+            // if action == Actions::Forward {
+            //     // eprintln!("{}: {:?} -> {:?} blocked because cell contains {:?}", a, robot.coords, proposed_next_coord, cell.present);
+            //     let again = next_coords(&nex, Actions::Forward);
+            //     if self.valid_coords(&again) {
+            //         let cell = self.grid.get_cell_mut(&again.xy);
+            //         if !cell.present.is_empty() {
+            //             nex = robot.coords;
+            //         }
+            //
+            //     }
+            //
             // }
+
+
+
+            let cell = self.grid.get_cell_mut(&robot.coords.xy);
+            if cell.present.contains(&a) {
+            } else {
+                nex = robot.coords;
+            }
             // let place = next_occ[nex.xy.x as usize][nex.xy.y as usize]
             //     .get_or_insert_with(|| HashSet::new());
             // place.insert(a);
@@ -656,17 +686,17 @@ pub fn next_coords(coord: &Coords, action: Actions) -> Coords {
         }
         Actions::TurnLeft => {
             let orientation = coord.orientation.rotate_left();
-            let xy = coord.xy + orientation.vector();
+            // let xy = coord.xy + orientation.vector();
             Coords {
-                xy,
+                xy: coord.xy,
                 orientation,
             }
         }
         Actions::TurnRight => {
             let orientation = coord.orientation.rotate_right();
-            let xy = coord.xy + orientation.vector();
+            // let xy = coord.xy + orientation.vector();
             Coords {
-                xy,
+                xy: coord.xy,
                 orientation,
             }
         }
