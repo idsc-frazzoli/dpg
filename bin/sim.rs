@@ -9,14 +9,12 @@ use std::process::Command;
 use image::{ImageBuffer, Rgb};
 use indicatif::{ProgressBar, ProgressStyle};
 use pathfinding::prelude::astar;
-use rand::Rng;
 use rand::seq::SliceRandom;
+use rand::Rng;
 use rusttype::{Font, Scale};
 
-use dpg::{
-    Actions, Block, BlockMap, Coords, Orientations, RNG, Robot, Size, World, XY,
-};
 use dpg::Grid;
+use dpg::{Actions, Block, BlockMap, Coords, Orientations, Robot, Size, World, RNG, XY};
 
 const COLOR_RED: Rgb<u8> = image::Rgb([255, 0, 0]);
 const COLOR_GREEN: Rgb<u8> = image::Rgb([0, 255, 0]);
@@ -38,7 +36,6 @@ fn visualize_map(world: &World) -> ImageFormat {
     let size = world.size();
     let mut imgbuf = image::ImageBuffer::new(size.x as u32, size.y as u32);
     imgbuf.fill(0);
-
 
     for (u, v, pixel) in imgbuf.enumerate_pixels_mut() {
         let v2 = size.y - v as i16 - 1;
@@ -150,12 +147,10 @@ pub enum SimpleAgentStates {
     TRAVELING_TO_HOME,
 }
 
-
 pub struct SimpleAgent {
     pub objectives: Objectives,
     pub state: SimpleAgentStates,
     pub plan: Option<PlanResult>,
-
 }
 
 pub enum PlanResult {
@@ -165,15 +160,14 @@ pub enum PlanResult {
 
 impl SimpleAgent {
     fn replan(&mut self, start: &Coords, world: &World, goal: Coords) {
-
         // let start = robot.coords;
         assert!(world.valid_coords(start));
-        let result = astar(start,
-                           |c|
-                               world.successors(c)
-                                   .into_iter().map(|p| (p, 1)),
-                           |c| goal.dist(c),
-                           |&p| p == goal);
+        let result = astar(
+            start,
+            |c| world.successors(c).into_iter().map(|p| (p, 1)),
+            |c| goal.dist(c),
+            |&p| p == goal,
+        );
         if let Some((path, _cost)) = result {
             let vc = VecDeque::from(path);
             assert!(vc.front() == Some(start));
@@ -205,12 +199,13 @@ impl SimpleAgent {
         }
     }
 
-    fn update(&mut self,
-              rng: &mut RNG,
-              name: usize,
-              robot: &Robot,
-              world: &World,
-              horizon: usize,
+    fn update(
+        &mut self,
+        rng: &mut RNG,
+        name: usize,
+        robot: &Robot,
+        world: &World,
+        horizon: usize,
     ) -> Vec<Actions> {
         match self.state {
             SimpleAgentStates::TRAVELING_TO_WORK => {
@@ -231,14 +226,14 @@ impl SimpleAgent {
         }
         let goal = self.get_goal();
 
-
         if self.plan.is_none() {
             self.replan(&robot.coords, world, goal);
 
             if let Some(PlanResult::Failure) = &self.plan {
-                eprintln!("{name} has failure to plan at {:?}\n{:?}",
-                          robot.coords,
-                          self.objectives);
+                eprintln!(
+                    "{name} has failure to plan at {:?}\n{:?}",
+                    robot.coords, self.objectives
+                );
             }
         }
         match &mut self.plan {
@@ -247,8 +242,10 @@ impl SimpleAgent {
             }
             Some(PlanResult::Success(path)) => {
                 if path.is_empty() {
-                    eprintln!("path is empty.\n objs: {:?}\n @ {:?}",
-                              self.objectives, robot.coords);
+                    eprintln!(
+                        "path is empty.\n objs: {:?}\n @ {:?}",
+                        self.objectives, robot.coords
+                    );
                 }
                 if path.len() >= 2 && path[1] == robot.coords {
                     path.pop_front();
@@ -257,8 +254,10 @@ impl SimpleAgent {
                 }
 
                 if path[0] != robot.coords {
-                    eprintln!("#{} I will wait in progressing: = {:?} != robot.coords = {:?}",
-                              name, path[0], robot.coords);
+                    eprintln!(
+                        "#{} I will wait in progressing: = {:?} != robot.coords = {:?}",
+                        name, path[0], robot.coords
+                    );
                     self.plan = None;
                     eprintln!("{name} needs to replan");
 
@@ -269,7 +268,6 @@ impl SimpleAgent {
                     for i in 0..navailable {
                         immediate_plan[i] = Actions::from_pair(&path[i], &path[i + 1]).unwrap();
                     }
-
 
                     return immediate_plan;
                 }
@@ -393,18 +391,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         ProgressStyle::with_template(
             "[{per_sec:10} wait {eta_precise}] {wide_bar} {pos:>7}/{len:7} {msg}",
         )
-            .unwrap()
-            .progress_chars("##-"),
+        .unwrap()
+        .progress_chars("##-"),
     );
-
 
     {
         let world2 = world.clone();
-        let mut robot_update_function = move |rng: &mut RNG,
-                                              robot_name: usize,
-                                              robot: &Robot,
-                                              horizon: usize|
-            agents[robot_name].update(rng, robot_name, robot, &world2, horizon);
+        let mut robot_update_function =
+            move |rng: &mut RNG, robot_name: usize, robot: &Robot, horizon: usize| {
+                agents[robot_name].update(rng, robot_name, robot, &world2, horizon)
+            };
         for i in 0..steps {
             if i % 5 == 0 {
                 pb.set_position(i as u64);
@@ -431,8 +427,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             ProgressStyle::with_template(
                 "[{per_sec:10} wait {eta_precise}] {wide_bar} {pos:>7}/{len:7} {msg}",
             )
-                .unwrap()
-                .progress_chars("##-"),
+            .unwrap()
+            .progress_chars("##-"),
         );
         const SKIP_FRAMES_VIDEO: usize = 1;
         for (a, worldi) in states.iter().enumerate() {
@@ -446,7 +442,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let hours = (time_of_day / 3600.0) as i32;
             let minutes = ((time_of_day - (hours as f64 * 3600.0)) / 60.0) as i32;
             let seconds = (time_of_day - (hours as f64 * 3600.0) - (minutes as f64 * 60.0)) as i32;
-            let time_of_day = format!("{:02}:{:02}:{:02}   {:7} ", hours, minutes, seconds, a, );
+            let time_of_day = format!("{:02}:{:02}:{:02}   {:7} ", hours, minutes, seconds, a,);
 
             let mut imgbuf = map.clone();
             let height = 12.4;
@@ -471,7 +467,6 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         pb.finish();
         eprintln!("Rendering done");
-
 
         if !frames.is_empty() {
             eprintln!("Movie");

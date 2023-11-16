@@ -10,7 +10,7 @@ mod efficient_setsampling;
 pub use efficient_setsampling::*;
 mod arbitration;
 pub use arbitration::*;
- 
+
 // type AgentName = String;
 // type AgentState = f32;
 // type Command = String;

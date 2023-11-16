@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
 use std::collections::hash_map;
+use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use itertools::Itertools;
@@ -19,7 +19,6 @@ pub struct ArbSetup {
 
 // Import the Itertools trait to get access to its methods
 
-
 pub struct ArbStep {
     /// for each agent, the coords
     pub coords: Vec<Coords>,
@@ -33,7 +32,12 @@ pub struct ArbResult {
 type RS = (usize, XYCell);
 type RSM = HashMap<RS, usize>;
 
-pub fn get_resources_needed(t0: usize, coord: &Coords, action: Actions, robot_name: RobotName) -> RSM {
+pub fn get_resources_needed(
+    t0: usize,
+    coord: &Coords,
+    action: Actions,
+    robot_name: RobotName,
+) -> RSM {
     let coord = coord;
     let coord2 = next_coords(coord, action);
     hashmap![(t0, coord.xy) => robot_name, (t0 , coord2.xy)=>robot_name,
@@ -53,7 +57,13 @@ pub fn are_resources_available(resources_committed: &RSM, resources: &RSM) -> bo
     true
 }
 
-pub fn is_action_feasible(resources_committed: &RSM, robot_name: RobotName, coord: &Coords, t0: usize, action: Actions) -> Option<(Coords, RSM)> {
+pub fn is_action_feasible(
+    resources_committed: &RSM,
+    robot_name: RobotName,
+    coord: &Coords,
+    t0: usize,
+    action: Actions,
+) -> Option<(Coords, RSM)> {
     // see if we can add these resources
     let coord2 = next_coords(coord, action);
 
@@ -76,8 +86,13 @@ pub fn is_action_feasible(resources_committed: &RSM, robot_name: RobotName, coor
     }
 }
 
-pub fn assign_actions(resources: &RSM, robot_name: RobotName, coord: &Coords, actions_committed: &Vec<Actions>,
-                      actions_remaining: &Vec<Actions>) -> Option<(RSM, Vec<Actions>)> {
+pub fn assign_actions(
+    resources: &RSM,
+    robot_name: RobotName,
+    coord: &Coords,
+    actions_committed: &Vec<Actions>,
+    actions_remaining: &Vec<Actions>,
+) -> Option<(RSM, Vec<Actions>)> {
     // eprintln!("assign_actions for {robot_name}: actions_committed = {:?}, actions_remaining = {:?}, \
     // resources= {resources:?}",
     //           actions_committed, actions_remaining);
@@ -90,7 +105,13 @@ pub fn assign_actions(resources: &RSM, robot_name: RobotName, coord: &Coords, ac
         let mut actions_committed = actions_committed.clone();
         actions_committed.push(action);
         let actions_remaining = actions_remaining[1..].to_vec();
-        assign_actions(&r, robot_name, &coord2, &actions_committed, &actions_remaining)
+        assign_actions(
+            &r,
+            robot_name,
+            &coord2,
+            &actions_committed,
+            &actions_remaining,
+        )
     } else {
         // eprintln!("assign_actions: adding wait for {robot_name} at {coord:?} at delay {delay}",);
         let mut actions_committed = actions_committed.clone();
@@ -110,7 +131,13 @@ pub fn assign_actions(resources: &RSM, robot_name: RobotName, coord: &Coords, ac
         mark_occupied(&mut resources, delay, &coord.xy, robot_name);
         // resources.insert((delay, coord.xy), robot_name);
 
-        assign_actions(&resources, robot_name, coord, &actions_committed, &actions_remaining)
+        assign_actions(
+            &resources,
+            robot_name,
+            coord,
+            &actions_committed,
+            &actions_remaining,
+        )
     }
 }
 
@@ -120,7 +147,12 @@ pub struct RobotResult {
     pub cost: usize,
 }
 
-pub fn occupied_by_someone_else(resources: &RSM, t0: usize, xy: &XYCell, robot_name: RobotName) -> bool {
+pub fn occupied_by_someone_else(
+    resources: &RSM,
+    t0: usize,
+    xy: &XYCell,
+    robot_name: RobotName,
+) -> bool {
     let key = (t0, *xy);
     if resources.contains_key(&key) {
         let other = resources[&key];
@@ -151,7 +183,10 @@ pub fn assign(s: &ArbSetup, order: &Vec<usize>) -> Option<(RSM, Vec<RobotResult>
 
     let mut agents_results: Vec<RobotResult> = Default::default();
     for _ in order {
-        agents_results.push(RobotResult { actions: Vec::new(), cost: 0 });
+        agents_results.push(RobotResult {
+            actions: Vec::new(),
+            cost: 0,
+        });
     }
     for i in order {
         let agent = &s.agents[*i];
@@ -205,7 +240,6 @@ pub fn arbitration(s: &ArbSetup) -> ArbResult {
                 let costs = solution.iter().map(|r| r.cost).collect_vec();
                 // let plans = solution.iter().map(|r| r.actions.clone()).collect_vec();
 
-
                 for c in costs_found.keys() {
                     if le(c, &costs) {
                         // dominated
@@ -214,15 +248,21 @@ pub fn arbitration(s: &ArbSetup) -> ArbResult {
                 }
                 // eprintln!("{costs:?} is minimal ");
 
-                costs_found.entry(costs.clone()).or_default().insert(solution);
-                let to_remove: Vec<Vec<usize>> = costs_found.keys().filter(|c| le(&costs, &c)).map(|x| x.clone()).collect_vec();
+                costs_found
+                    .entry(costs.clone())
+                    .or_default()
+                    .insert(solution);
+                let to_remove: Vec<Vec<usize>> = costs_found
+                    .keys()
+                    .filter(|c| le(&costs, &c))
+                    .map(|x| x.clone())
+                    .collect_vec();
 
                 for d in &to_remove {
                     costs_found.remove(d);
                 }
             }
         }
-
 
         // let mut r: Vec<HashMap<RobotName, HashSet<XYCell>>> = Default::default();
         // let max_t = rsm.keys().map(|(t, _)| t).max().unwrap();
@@ -247,14 +287,10 @@ pub fn arbitration(s: &ArbSetup) -> ArbResult {
             eprintln!("{costs:?} -> #{a} {plans:?}");
         }
 
-
         // eprintln!("{costs:?} -> {solutions:?}");
     }
 
-
-    ArbResult {
-        steps: Vec::new(),
-    }
+    ArbResult { steps: Vec::new() }
 }
 
 const F: Actions = Actions::Forward;
@@ -295,9 +331,7 @@ mod test {
             plan: vec![F, F, F],
         };
         let agents = vec![
-            E1, E2, E3,
-            N1,
-            W1,
+            E1, E2, E3, N1, W1,
             S1,
             // ArbAgent {
             //     coord: Coords::from(XYCell::new(-1, 1), Orientations::SOUTH),

@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use rand::seq::SliceRandom;
 
-use crate::{Actions, Cell, Coords, Grid, NUM_ORIENTATIONS, Orientations, RNG, Size, XY, XYCell};
+use crate::{Actions, Cell, Coords, Grid, Orientations, Size, XYCell, NUM_ORIENTATIONS, RNG, XY};
 
 pub enum BlockType {
     Empty,
@@ -48,7 +48,6 @@ impl Block {
         ];
         let chosen = key.choose(rng).unwrap();
 
-
         // for (x, y) in [
         //     (0, 0),
         //     // (0, size.y - 1),
@@ -72,7 +71,10 @@ impl Block {
         let mut basic = Self::basic_with_roads(size, rng);
         let buffer_on_corners = 2;
         for x in 0..size.x {
-            if x % parking_distance == 0 && x > 0 + buffer_on_corners && x < size.x - parking_distance - buffer_on_corners {
+            if x % parking_distance == 0
+                && x > 0 + buffer_on_corners
+                && x < size.x - parking_distance - buffer_on_corners
+            {
                 let cpark = Coords::from(XY::new(x, 1), Orientations::NORTH);
                 basic.grid.make_parking_cell(&cpark);
 
@@ -82,7 +84,10 @@ impl Block {
         }
         // do the same for y
         for y in 0..size.y {
-            if y % parking_distance == 0 && y > 0 + buffer_on_corners && y < size.y - parking_distance - buffer_on_corners {
+            if y % parking_distance == 0
+                && y > 0 + buffer_on_corners
+                && y < size.y - parking_distance - buffer_on_corners
+            {
                 let cpark = Coords::from(XY::new(1, y), Orientations::EAST);
                 basic.grid.make_parking_cell(&cpark);
 
@@ -201,7 +206,6 @@ mod tests {
         }
 
         let g = bl.stitch();
-
 
         // draw the map
     }

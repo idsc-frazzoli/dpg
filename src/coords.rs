@@ -7,18 +7,17 @@ use num::integer::sqrt;
 use num::Num;
 use petgraph::algo::connected_components;
 use petgraph::graph::{NodeIndex, UnGraph};
-use petgraph::Undirected;
 use petgraph::visit::{Dfs, Visitable};
+use petgraph::Undirected;
 use rand::prelude::IteratorRandom;
-use rand::Rng;
 use rand::rngs::ThreadRng;
+use rand::Rng;
 // Rng trait must be in scope to use random methods
 use rand::seq::SliceRandom;
 
 use crate::SetSampler;
 
 pub type RNG = ThreadRng;
-
 
 #[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
 pub enum Orientations {
@@ -28,7 +27,6 @@ pub enum Orientations {
     EAST = 3,
 }
 // implement To<usize>
-
 
 impl From<Orientations> for usize {
     fn from(item: Orientations) -> Self {
@@ -92,7 +90,6 @@ impl Orientations {
     }
     //noinspection DuplicatedCode
     pub fn rotate_left(&self) -> Self {
-
         match self {
             Orientations::NORTH => Orientations::WEST,
             Orientations::SOUTH => Orientations::EAST,
@@ -113,23 +110,24 @@ impl Orientations {
 use std::fmt;
 use std::fmt::Display;
 
-
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
-pub struct XY<T>  {
+pub struct XY<T> {
     pub x: T,
     pub y: T,
 }
 
-impl<T> fmt::Debug for XY<T> where T: Display {
+impl<T> fmt::Debug for XY<T>
+where
+    T: Display,
+{
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({},{})", self.x, self.y)
     }
 }
 
-
 impl<T> XY<T>
-    where
-        T: Ord + Num,
+where
+    T: Ord + Num,
 {
     pub fn in_bounds(&self, p: XY<T>) -> bool {
         return p.x >= T::zero() && p.y >= T::zero() && p.x < self.x && p.y < self.y;
@@ -137,8 +135,8 @@ impl<T> XY<T>
 }
 
 impl<T> Add for XY<T>
-    where
-        T: Add<Output=T> + Copy,
+where
+    T: Add<Output = T> + Copy,
 {
     type Output = Self;
 
@@ -151,8 +149,8 @@ impl<T> Add for XY<T>
 }
 
 impl<T> Sub for XY<T>
-    where
-        T: Sub<Output=T> + Copy,
+where
+    T: Sub<Output = T> + Copy,
 {
     type Output = Self;
 
@@ -171,15 +169,15 @@ impl Size {
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }
-    pub fn iterate(&self) -> impl Iterator<Item=(i16, i16)> {
+    pub fn iterate(&self) -> impl Iterator<Item = (i16, i16)> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| (x, y)))
     }
-    pub fn iterate_xy(&self) -> impl Iterator<Item=Size> {
+    pub fn iterate_xy(&self) -> impl Iterator<Item = Size> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| XY { x, y }))
     }
-    pub fn iterate_xy_interior(&self) -> impl Iterator<Item=Size> {
+    pub fn iterate_xy_interior(&self) -> impl Iterator<Item = Size> {
         let size = *self;
         (1..size.x - 1).flat_map(move |x| (1..size.y - 1).map(move |y| XY { x, y }))
     }
@@ -315,8 +313,8 @@ pub struct Grid {
 }
 
 pub fn sample_from_hashset<T>(s: &HashSet<T>, rng: &mut RNG) -> T
-    where
-        T: Copy,
+where
+    T: Copy,
 {
     *s.iter().choose(rng).unwrap()
 }
@@ -340,7 +338,7 @@ impl Grid {
         }
     }
 
-    pub fn iterate_cells(&self) -> impl Iterator<Item=(XYCell, &Cell)> {
+    pub fn iterate_cells(&self) -> impl Iterator<Item = (XYCell, &Cell)> {
         self.size
             .iterate_xy()
             .map(move |xy| (xy, &self.cells[xy.x as usize][xy.y as usize]))
@@ -536,7 +534,10 @@ impl World {
         let i = (coords.xy.x + coords.xy.y) as usize % RobotColors.len();
         // sample random color
         let color = RobotColors[i];
-        let robot = Robot { coords, color: image::Rgb::from(color) };
+        let robot = Robot {
+            coords,
+            color: image::Rgb::from(color),
+        };
         self.robots.push(robot);
         robot_name
     }
@@ -564,7 +565,6 @@ impl World {
 
     pub fn allowed_robot_actions_if_empty(&self, coords: &Coords) -> Vec<Actions> {
         let cell = self.grid.get_cell(&coords.xy);
-
 
         let mut all_actions = Vec::with_capacity(NUM_ACTIONS);
 
@@ -647,7 +647,7 @@ impl World {
 
         let mut proposed_next_coords: Vec<Coords> = Vec::with_capacity(self.robots.len());
 
-        let horizon = 5 ;
+        let horizon = 5;
 
         for (a, robot) in self.robots.iter().enumerate() {
             let available_actions = self.allowed_robot_actions_if_empty(&robot.coords);
@@ -666,9 +666,11 @@ impl World {
             let horizon_coords = simulate(robot.coords, &actions);
             for (dt, c) in horizon_coords.iter().enumerate() {
                 let resource = (0, c.xy);
-                resource_usage.entry(resource).or_insert_with(HashSet::new).insert(a);
+                resource_usage
+                    .entry(resource)
+                    .or_insert_with(HashSet::new)
+                    .insert(a);
             }
-
 
             let first = actions[0];
             let mut nex = next_coords(&robot.coords, first);
@@ -690,7 +692,6 @@ impl World {
 
         let mut graph = UnGraph::<usize, ()>::new_undirected();
 
-
         // find the clusters of interacting robots
         let mut indices = Vec::with_capacity(self.robots.len());
         for a in 0..self.robots.len() {
@@ -708,11 +709,11 @@ impl World {
         let components = find_connected_components(&graph);
         const MAX_GAME_SIZE: usize = 32;
         // eprintln!("resources {:?}", resource_usage);
-        let mut games_by_size =  [0; MAX_GAME_SIZE];
+        let mut games_by_size = [0; MAX_GAME_SIZE];
         for (a, comp) in components.iter().enumerate() {
             let nplayers = comp.len();
 
-            let nplayers = nplayers.min(MAX_GAME_SIZE-1);
+            let nplayers = nplayers.min(MAX_GAME_SIZE - 1);
             games_by_size[nplayers] += 1;
             // eprintln!("comp #{a}: {:?}", comp);
 
@@ -729,7 +730,6 @@ impl World {
         let mut indices: Vec<usize> = (0..self.robots.len()).collect();
         indices.shuffle(rng);
 
-
         for a in indices {
             let proposed_next_coord = proposed_next_coords[a];
 
@@ -739,7 +739,8 @@ impl World {
             match cell.present {
                 None => {}
                 Some(robot_name) => {
-                    if robot_name == a {} else {
+                    if robot_name == a {
+                    } else {
                         continue;
                     }
                 }
@@ -822,7 +823,6 @@ mod test {
     }
 }
 
-
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Actions {
     Wait = 0,
@@ -841,7 +841,6 @@ impl fmt::Debug for Actions {
             Actions::TurnRight => write!(f, "R"),
             Actions::Backward => write!(f, "B"),
         }
-
     }
 }
 pub const NUM_ACTIONS: usize = 5;
@@ -877,8 +876,7 @@ impl Actions {
     }
 }
 
-pub type FNUpdate = dyn FnMut(&mut RNG, usize, &Robot,
-    usize) -> Vec<Actions>;
+pub type FNUpdate = dyn FnMut(&mut RNG, usize, &Robot, usize) -> Vec<Actions>;
 
 pub fn blank_grid(size: XY<i16>) -> Vec<Vec<Cell>> {
     let mut grid = Vec::new();
@@ -908,7 +906,6 @@ impl World {
         }
     }
 }
-
 
 // Function to find connected components
 fn find_connected_components<N, E>(graph: &UnGraph<N, E>) -> Vec<Vec<NodeIndex>> {
