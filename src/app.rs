@@ -1,4 +1,4 @@
-use egui::{ColorImage, ImageSource, TextureHandle, TextureId, TextureOptions};
+use egui::{ColorImage, ImageSource, TextureHandle, TextureOptions};
 use rand::Rng;
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.

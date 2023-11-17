@@ -5,13 +5,10 @@ use std::ops::{Add, Sub};
 
 use num::integer::sqrt;
 use num::Num;
-use petgraph::algo::connected_components;
 use petgraph::graph::{NodeIndex, UnGraph};
-use petgraph::visit::{Dfs, Visitable};
-use petgraph::Undirected;
+use petgraph::visit::{Dfs};
 use rand::prelude::IteratorRandom;
 use rand::rngs::ThreadRng;
-use rand::Rng;
 // Rng trait must be in scope to use random methods
 use rand::seq::SliceRandom;
 
@@ -26,7 +23,6 @@ pub enum Orientations {
     WEST = 2,
     EAST = 3,
 }
-// implement To<usize>
 
 impl From<Orientations> for usize {
     fn from(item: Orientations) -> Self {
@@ -34,9 +30,6 @@ impl From<Orientations> for usize {
     }
 }
 
-// impl To<usize> for Orientations {
-//
-// }
 impl Orientations {
     pub fn from_index(a: usize) -> Self {
         match a {
@@ -50,15 +43,7 @@ impl Orientations {
         }
     }
 
-    // fn random() -> Self {
-    //     let choices = [
-    //         Orientations::NORTH,
-    //         Orientations::SOUTH,
-    //         Orientations::WEST,
-    //         Orientations::EAST,
-    //     ];
-    //     *choices.choose(&mut rand::thread_rng()).unwrap()
-    // }
+
     pub fn angle(&self) -> u16 {
         match self {
             Orientations::EAST => 0,
@@ -290,10 +275,6 @@ impl Cell {
         Self {
             present: None,
             ors,
-            // allowed_directions: [false; 4],
-            // allowed_turn_right: [true; 4],
-            // allowed_turn_left: [true; 4],
-            // allowed_go_backward: false,
             is_parking: false,
             is_charging: false,
             block: None,
@@ -309,7 +290,6 @@ pub struct Grid {
     traversable_cells: SetSampler<XYCell>,
     pub empty_parking_cells: SetSampler<XYCell>,
     empty_traversable_cells: SetSampler<XYCell>,
-    // empty_cells: HashSet<XYCell>,
 }
 
 pub fn sample_from_hashset<T>(s: &HashSet<T>, rng: &mut RNG) -> T
