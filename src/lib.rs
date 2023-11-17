@@ -1,5 +1,5 @@
 #![warn(clippy::all, rust_2018_idioms)]
-#![allow(unused_variables)]
+#![allow(unused_variables, non_snake_case)]
 
 mod app;
 mod coords;

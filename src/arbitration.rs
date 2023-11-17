@@ -1,32 +1,77 @@
-use std::collections::hash_map;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
 use itertools::Itertools;
 use maplit::hashmap;
-
+use maplit::hashset;
+use rand::seq::SliceRandom;
 use crate::coords::*;
+use crate::Plan;
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ArbAgent {
-    // pub name: usize,
     pub coord: Coords,
     pub plan: Vec<Actions>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct ArbSetup {
     pub agents: Vec<ArbAgent>,
+    // pub index2name: Vec<RobotName>,
 }
 
-// Import the Itertools trait to get access to its methods
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExtractedGame {
+    pub setup: ArbSetup,
+    pub index2name: Vec<RobotName>,
+}
 
-pub struct ArbStep {
+// #[derive(Debug, PartialEq, Eq)]
+// pub struct ArbSolutionsRobot {
+//     plan: Plan,
+//     cost: usize,
+// }
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct RobotResult {
+    pub plan: Plan,
+    pub cost: Cost,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
+pub struct ArbSolution {
     /// for each agent, the coords
-    pub coords: Vec<Coords>,
-    pub actions: Vec<Option<Actions>>,
+    pub perm: Vec<usize>,
+    pub costs: Costs,
+    pub robots: Vec<RobotResult>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub struct ArbResult {
-    pub steps: Vec<ArbStep>,
+    pub solutions: HashMap<Costs, HashSet<ArbSolution>>,
+}
+
+impl ArbResult {
+    pub fn pick_one(&self, rng: &mut RNG) -> ArbSolution {
+        // pick a random solution from self.solutions
+        let costs = sample_from_hashmap(&self.solutions, rng);
+        let equivalent = &self.solutions[&costs];
+        sample_from_hashset(equivalent, rng).clone()
+    }
+    pub fn remove_redundant(&self, rng: &mut RNG) -> Self {
+        let mut solutions: HashMap<Costs, HashSet<ArbSolution>> = Default::default();
+
+        for (c, equivalent) in self.solutions.iter() {
+            if equivalent.len() > 1 {
+                let one = sample_from_hashset(&equivalent, rng);
+                solutions.insert(c.clone(), hashset![one]);
+            } else {
+                solutions.insert(c.clone(), equivalent.clone());
+            }
+        }
+
+        Self { solutions }
+    }
 }
 
 type RS = (usize, XYCell);
@@ -117,35 +162,24 @@ pub fn assign_actions(
         let mut actions_committed = actions_committed.clone();
         actions_committed.push(Actions::Wait);
         let mut resources = resources.clone();
-        //
-        // if resources.contains_key(&(delay, coord.xy)) {
-        //     let other = resources[&(delay, coord.xy)];
-        //     if other != robot_name {
-        //         panic!("assign_actions: found conflict at {delay} for {robot_name} already {other}");
-        //     }
-        // }
-        if occupied_by_someone_else(&resources, delay, &coord.xy, robot_name) {
-            return None;
-        }
-        // assert!(!resources.contains_key(&(delay, coord.xy)));
-        mark_occupied(&mut resources, delay, &coord.xy, robot_name);
-        // resources.insert((delay, coord.xy), robot_name);
 
-        assign_actions(
-            &resources,
-            robot_name,
-            coord,
-            &actions_committed,
-            &actions_remaining,
-        )
+
+        if occupied_by_someone_else(&resources, delay, &coord.xy, robot_name) {
+            None
+        } else {
+            mark_occupied(&mut resources, delay, &coord.xy, robot_name);
+
+            assign_actions(
+                &resources,
+                robot_name,
+                coord,
+                &actions_committed,
+                &actions_remaining,
+            )
+        }
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct RobotResult {
-    pub actions: Vec<Actions>,
-    pub cost: usize,
-}
 
 pub fn occupied_by_someone_else(
     resources: &RSM,
@@ -175,7 +209,7 @@ pub fn mark_occupied(resources: &mut RSM, t0: usize, xy: &XYCell, robot_name: Ro
     }
 }
 
-pub fn assign(s: &ArbSetup, order: &Vec<usize>) -> Option<(RSM, Vec<RobotResult>)> {
+pub fn assign(s: &ArbSetup, order: &Vec<usize>) -> Option<(RSM, ArbSolution)> {
     let mut resources: RSM = Default::default();
     for (a, agent) in s.agents.iter().enumerate() {
         mark_occupied(&mut resources, 0, &agent.coord.xy, a);
@@ -184,7 +218,7 @@ pub fn assign(s: &ArbSetup, order: &Vec<usize>) -> Option<(RSM, Vec<RobotResult>
     let mut agents_results: Vec<RobotResult> = Default::default();
     for _ in order {
         agents_results.push(RobotResult {
-            actions: Vec::new(),
+            plan: Plan::default(),
             cost: 0,
         });
     }
@@ -196,13 +230,20 @@ pub fn assign(s: &ArbSetup, order: &Vec<usize>) -> Option<(RSM, Vec<RobotResult>
             None => return None,
             Some((r, acts)) => {
                 resources = r;
-                agents_results[*i].actions = acts.clone();
+                agents_results[*i].plan = acts.clone();
                 // count the number of Wait actions
                 agents_results[*i].cost = acts.iter().filter(|a| **a == Actions::Wait).count();
             }
         };
     }
-    Some((resources, agents_results))
+    let costs = agents_results.iter().map(|r| r.cost).collect_vec();
+
+    let a = ArbSolution {
+        perm: order.clone(),
+        costs,
+        robots: agents_results.clone(),
+    };
+    Some((resources, a))
 }
 
 pub fn le(a: &Vec<usize>, b: &Vec<usize>) -> bool {
@@ -222,44 +263,114 @@ pub fn leq(a: &Vec<usize>, b: &Vec<usize>) -> bool {
     true
 }
 
-pub fn arbitration(s: &ArbSetup) -> ArbResult {
+// pub fn factorial(n: usize) -> usize {
+//     let mut f = 1;
+//     for i in 1..n {
+//         f *= i;
+//     }
+//     f
+// }
+
+pub fn max_n_where_permutation_less_than(max: usize) -> usize {
+    let mut n = 1;
+    let mut f = 1;
+    while f < max {
+        n += 1;
+        f *= n;
+    }
+    n - 1
+}
+
+/// Returns the permutations of a set of n elements (0..n)
+/// with a maximum of max elements. Give 0 for max to get all permutations.
+pub fn get_permutations(n: usize, max: usize) -> Vec<Vec<usize>> {
+    let n0 = if max == 0 { n } else {
+        max_n_where_permutation_less_than(max)
+    };
+    eprintln!("get_permutations({n}, {max}) -> n0 = {n0}", n = n, max = max, n0 = n0);
+    if n <= n0 {
+        let mut res = Vec::new();
+
+        let perms = (0..n).permutations(n);
+        for p in perms {
+            res.push(p);
+        }
+        res
+    } else {
+        get_permutations(n0, max)
+            .iter()
+            .map(|p| {
+                let mut v = p.clone();
+                for i in n0..n {
+                    v.push(i);
+                }
+                v
+            })
+            .collect_vec()
+    }
+}
+
+
+pub fn find_feasible_plans(s: &ArbSetup, max: usize) -> ArbResult {
     let n = s.agents.len();
+    // if n == 1 {
+    //     let mut solutions: HashMap<Costs, HashSet<ArbSolution>> = HashMap::new();
+    //     let mut agents_results: Vec<RobotResult> = Default::default();
+    //     agents_results.push(RobotResult {
+    //         plan: s.agents[0].plan.clone(),
+    //         cost: 0,
+    //     });
+    //     let costs = agents_results.iter().map(|r| r.cost).collect_vec();
+    //     let a = ArbSolution {
+    //         perm: vec![0],
+    //         costs,
+    //         robots: agents_results.clone(),
+    //     };
+    //     solutions
+    //         .entry(a.costs.clone())
+    //         .or_default()
+    //         .insert(a.clone());
+    //     return ArbResult { solutions };
+    // }
 
-    let perms = (0..n).permutations(n);
+    let perms = get_permutations(n, max);
 
-    let mut costs_found: HashMap<Vec<usize>, HashSet<Vec<RobotResult>>> = HashMap::new();
+    // let perms = (0..n).permutations(n);
 
+    eprintln!("nrobots = {n}  perms = {perms:?}  < {max}", n = n, perms = perms.len());
+
+    let mut solutions: HashMap<Costs, HashSet<ArbSolution>> = HashMap::new();
     for perm in perms {
-        match assign(s, &perm) {
+        match &assign(s, &perm) {
             None => {
                 // eprintln!("{perm:?} -> FAIL");
                 continue;
             }
-            Some((_rsm, solution)) => {
+            Some((_, solution)) => {
                 // let mut costs = Vec::with_capacity(n).fill(0);
-                let costs = solution.iter().map(|r| r.cost).collect_vec();
+                // let costs = solution.robots.iter().map(|r| r.cost).collect_vec();
                 // let plans = solution.iter().map(|r| r.actions.clone()).collect_vec();
 
-                for c in costs_found.keys() {
-                    if le(c, &costs) {
+                for c in solutions.keys() {
+                    if le(c, &solution.costs) {
                         // dominated
                         continue;
                     }
                 }
                 // eprintln!("{costs:?} is minimal ");
 
-                costs_found
-                    .entry(costs.clone())
+                solutions
+                    .entry(solution.costs.clone())
                     .or_default()
-                    .insert(solution);
-                let to_remove: Vec<Vec<usize>> = costs_found
+                    .insert(solution.clone());
+                let to_remove: Vec<Vec<usize>> = solutions
                     .keys()
-                    .filter(|c| le(&costs, &c))
+                    .filter(|c| le(&solution.costs, &c))
                     .map(|x| x.clone())
                     .collect_vec();
 
                 for d in &to_remove {
-                    costs_found.remove(d);
+                    solutions.remove(d);
                 }
             }
         }
@@ -281,20 +392,22 @@ pub fn arbitration(s: &ArbSetup) -> ArbResult {
         // }
     }
 
-    for (costs, solutions) in costs_found.iter() {
-        for (a, solution) in solutions.iter().enumerate() {
-            let plans = solution.iter().map(|r| r.actions.clone()).collect_vec();
-            eprintln!("{costs:?} -> #{a} {plans:?}");
-        }
+    // for (costs, solutions) in solutions.iter() {
+    //     let solution: &ArbSolution;
+    //     for (a, solution) in solutions.iter().enumerate() {
+    //         let plans = solution.robots.iter().map(|r| r.plan.clone()).collect_vec();
+    //         eprintln!("{costs:?} -> #{a} {plans:?}");
+    //     }
+    //
+    //     // eprintln!("{costs:?} -> {solutions:?}");
+    // }
 
-        // eprintln!("{costs:?} -> {solutions:?}");
-    }
-
-    ArbResult { steps: Vec::new() }
+    ArbResult { solutions }
 }
 
 const F: Actions = Actions::Forward;
 const R: Actions = Actions::TurnRight;
+
 
 #[cfg(test)]
 mod test {
@@ -302,53 +415,76 @@ mod test {
 
     use super::*;
 
+    fn get_E(ord: usize, nsteps: usize) -> ArbAgent {
+        ArbAgent {
+            coord: Coords::from(XYCell::new(1 + (ord as i16), 0), Orientations::WEST),
+            plan: vec![F, F, F],
+        }
+    }
+
+    fn get_N(ord: usize, nsteps: usize) -> ArbAgent {
+        ArbAgent {
+            coord: Coords::from(XYCell::new(-1 - (ord as i16), 1), Orientations::SOUTH),
+            plan: vec![F, F, F],
+        }
+    }
+
+    fn get_W(ord: usize, nsteps: usize) -> ArbAgent {
+        ArbAgent {
+            coord: Coords::from(XYCell::new(-2 + (ord as i16), -1), Orientations::EAST),
+            plan: vec![F, F, F],
+        }
+    }
+
+    fn get_S(ord: usize, nsteps: usize) -> ArbAgent {
+        ArbAgent {
+            coord: Coords::from(XYCell::new(0, -2 - (ord as i16)), Orientations::NORTH),
+            plan: vec![F, F, F],
+        }
+    }
+
+
     #[test]
     fn test_arb1() {
         //
+        let H = 3;
+        let E1 = get_E(0, H);
+        let N1 = get_N(0, H);
+        let W1 = get_W(0, H);
+        let S1 = get_S(0, H);
 
-        let E1 = ArbAgent {
-            coord: Coords::from(XYCell::new(1, 0), Orientations::WEST),
-            plan: vec![F, F, F],
-        };
-        let E2 = ArbAgent {
-            coord: Coords::from(XYCell::new(2, 0), Orientations::WEST),
-            plan: vec![F, F, F],
-        };
-        let E3 = ArbAgent {
-            coord: Coords::from(XYCell::new(3, 0), Orientations::WEST),
-            plan: vec![F, F, F],
-        };
-        let N1 = ArbAgent {
-            coord: Coords::from(XYCell::new(-1, 1), Orientations::SOUTH),
-            plan: vec![F, F, F],
-        };
-        let W1 = ArbAgent {
-            coord: Coords::from(XYCell::new(-2, -1), Orientations::EAST),
-            plan: vec![F, F, F],
-        };
-        let S1 = ArbAgent {
-            coord: Coords::from(XYCell::new(0, -2), Orientations::NORTH),
-            plan: vec![F, F, F],
-        };
-        let agents = vec![
-            E1, E2, E3, N1, W1,
-            S1,
-            // ArbAgent {
-            //     coord: Coords::from(XYCell::new(-1, 1), Orientations::SOUTH),
-            //     plan: vec![F, F, F],
-            // },
-            // ArbAgent {
-            //     coord: Coords::from(XYCell::new(-2, -1), Orientations::EAST),
-            //     plan: vec![F, F, F],
-            // },
-            // ArbAgent {
-            //     coord: Coords::from(XYCell::new(0, -2), Orientations::NORTH),
-            //     plan: vec![F, F, F],
-            // },
-        ];
+        let agents = vec![E1, N1, W1, S1];
         let setup = ArbSetup { agents };
+        let result = find_feasible_plans(&setup, 0);
+        eprintln!("result = {result:?}", result = result.solutions.keys());
+        let result_min = result.remove_redundant(&mut RNG::default());
+        assert_eq!(result.solutions.len(), 6);
+        // todo: check that the symmetric case has 6 solutions (4 + 2 criss cross)
+    }
 
-        arbitration(&setup);
+    #[test]
+    fn test_arb2() {
+        let rng = &mut RNG::default();
+        let mut agents = Vec::new();
+        let n = 10;
+        let H = 3;
+        for i in 0..n {
+            let E1 = get_E(i, H);
+
+            agents.push(E1);
+        }
+        agents.shuffle(rng);
+
+        let setup = ArbSetup { agents };
+        let result = find_feasible_plans(&setup, 1000);
+        assert_eq!(result.solutions.len(), 1);
+        //
+        // let agents = vec![E1, N1, W1, S1];
+        // let setup = ArbSetup { agents };
+        // let result = find_feasible_plans(&setup, 0);
+        eprintln!("result = {result:?}", result = result.solutions.keys());
+        // let result_min = result.remove_redundant(&mut RNG::default());
+        // assert_eq!(result.solutions.len(), 6);
         // todo: check that the symmetric case has 6 solutions (4 + 2 criss cross)
     }
 }

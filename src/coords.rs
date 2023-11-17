@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt;
+use std::fmt::Display;
 use std::hash::Hash;
 use std::ops::{Add, Sub};
 
@@ -9,14 +11,15 @@ use petgraph::graph::{NodeIndex, UnGraph};
 use petgraph::visit::Dfs;
 use rand::prelude::IteratorRandom;
 use rand::rngs::ThreadRng;
-// Rng trait must be in scope to use random methods
 use rand::seq::SliceRandom;
 
-use crate::SetSampler;
+use crate::{ArbAgent, ArbSetup, ExtractedGame, find_feasible_plans, SetSampler};
+
+// Rng trait must be in scope to use random methods
 
 pub type RNG = ThreadRng;
 
-#[derive(Hash, Eq, PartialEq, Debug, Copy, Clone)]
+#[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub enum Orientations {
     NORTH = 0,
     SOUTH = 1,
@@ -27,6 +30,18 @@ pub enum Orientations {
 impl From<Orientations> for usize {
     fn from(item: Orientations) -> Self {
         item as usize
+    }
+}
+
+
+impl fmt::Debug for Orientations {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Orientations::NORTH => write!(f, "N"),
+            Orientations::SOUTH => write!(f, "S"),
+            Orientations::WEST => write!(f, "W"),
+            Orientations::EAST => write!(f, "E"),
+        }
     }
 }
 
@@ -91,8 +106,6 @@ impl Orientations {
         }
     }
 }
-use std::fmt;
-use std::fmt::Display;
 
 #[derive(Hash, Eq, PartialEq, Copy, Clone)]
 pub struct XY<T> {
@@ -101,8 +114,8 @@ pub struct XY<T> {
 }
 
 impl<T> fmt::Debug for XY<T>
-where
-    T: Display,
+    where
+        T: Display,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "({},{})", self.x, self.y)
@@ -110,8 +123,8 @@ where
 }
 
 impl<T> XY<T>
-where
-    T: Ord + Num,
+    where
+        T: Ord + Num,
 {
     pub fn in_bounds(&self, p: XY<T>) -> bool {
         return p.x >= T::zero() && p.y >= T::zero() && p.x < self.x && p.y < self.y;
@@ -119,8 +132,8 @@ where
 }
 
 impl<T> Add for XY<T>
-where
-    T: Add<Output = T> + Copy,
+    where
+        T: Add<Output=T> + Copy,
 {
     type Output = Self;
 
@@ -133,8 +146,8 @@ where
 }
 
 impl<T> Sub for XY<T>
-where
-    T: Sub<Output = T> + Copy,
+    where
+        T: Sub<Output=T> + Copy,
 {
     type Output = Self;
 
@@ -153,26 +166,37 @@ impl Size {
     pub fn new(x: i16, y: i16) -> Self {
         Self { x, y }
     }
-    pub fn iterate(&self) -> impl Iterator<Item = (i16, i16)> {
+    pub fn iterate(&self) -> impl Iterator<Item=(i16, i16)> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| (x, y)))
     }
-    pub fn iterate_xy(&self) -> impl Iterator<Item = Size> {
+    pub fn iterate_xy(&self) -> impl Iterator<Item=Size> {
         let size = *self;
         (0..size.x).flat_map(move |x| (0..size.y).map(move |y| XY { x, y }))
     }
-    pub fn iterate_xy_interior(&self) -> impl Iterator<Item = Size> {
+    pub fn iterate_xy_interior(&self) -> impl Iterator<Item=Size> {
         let size = *self;
         (1..size.x - 1).flat_map(move |x| (1..size.y - 1).map(move |y| XY { x, y }))
     }
 }
 
 pub type RobotName = usize;
+pub type StepIndex = usize;
+pub type Plan = Vec<Actions>;
+pub type Cost = usize;
+pub type Costs = Vec<Cost>;
 
-#[derive(Hash, Eq, PartialEq, Debug, Clone, Copy)]
+#[derive(Hash, Eq, PartialEq, Clone, Copy)]
 pub struct Coords {
     pub xy: XYCell,
     pub orientation: Orientations,
+}
+
+impl fmt::Debug for Coords
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{{:?}:{:?}}}", self.xy, self.orientation)
+    }
 }
 
 impl Coords {
@@ -233,10 +257,6 @@ pub struct Cell {
     pub block: Option<XYCell>,
 }
 
-//
-// pub struct Intersection {
-//
-// }
 impl Cell {
     pub fn empty(&self) -> bool {
         self.present.is_none()
@@ -290,12 +310,22 @@ pub struct Grid {
     pub empty_parking_cells: SetSampler<XYCell>,
     empty_traversable_cells: SetSampler<XYCell>,
 }
-
 pub fn sample_from_hashset<T>(s: &HashSet<T>, rng: &mut RNG) -> T
-where
-    T: Copy,
+    where
+        T: Clone,
 {
-    *s.iter().choose(rng).unwrap()
+    let x = s.iter().choose(rng).unwrap();
+    x.clone()
+}
+pub fn sample_from_hashmap<K, V>(s: &HashMap<K, V>, rng: &mut RNG) -> K
+    where
+        K: Clone,
+{
+    if s.is_empty() {
+        panic!("Empty hashmap");
+    }
+    let (key, _) = s.iter().choose(rng).unwrap();
+    key.clone()
 }
 
 const COLOR_ROAD: [u8; 3] = [0, 0, 0];
@@ -317,7 +347,7 @@ impl Grid {
         }
     }
 
-    pub fn iterate_cells(&self) -> impl Iterator<Item = (XYCell, &Cell)> {
+    pub fn iterate_cells(&self) -> impl Iterator<Item=(XYCell, &Cell)> {
         self.size
             .iterate_xy()
             .map(move |xy| (xy, &self.cells[xy.x as usize][xy.y as usize]))
@@ -423,7 +453,6 @@ impl Grid {
         let mut cell = Cell::new();
         cell.color = image::Rgb::from(COLOR_PARKING);
         cell.is_parking = true;
-        // cell.allowed_go_backward = true;
         cell.set_allowed(coords.orientation);
         cell.ors[coords.orientation as usize].action_allowed[Actions::Backward as usize] = true;
         self.replace_cell(&coords.xy, cell);
@@ -493,6 +522,64 @@ pub fn simulate(c0: Coords, actions: &Vec<Actions>) -> Vec<Coords> {
     res
 }
 
+fn find_clusters(
+    player_plans: &Vec<ArbAgent>,
+    resource_usage: &HashMap<(StepIndex, XYCell), HashSet<RobotName>>,
+) -> Vec<ExtractedGame> {
+    let mut graph = UnGraph::<usize, ()>::new_undirected();
+    let nrobots = player_plans.len();
+    // find the clusters of interacting robots
+    let mut indices = Vec::with_capacity(nrobots);
+    for a in 0..nrobots {
+        let index = graph.add_node(a);
+        indices.push(index);
+    }
+    for (resource, known) in resource_usage.iter() {
+        for p1 in known {
+            for p2 in known {
+                let n1 = indices[*p1];
+                let n2 = indices[*p2];
+                graph.add_edge(n1, n2, ());
+            }
+        }
+    }
+    let components = find_connected_components(&graph);
+    const MAX_GAME_SIZE: usize = 32;
+    // eprintln!("resources {:?}", resource_usage);
+    let mut games_by_size = [0; MAX_GAME_SIZE];
+    let mut res = Vec::new();
+    for (a, comp) in components.iter().enumerate() {
+        let nplayers = comp.len();
+
+        let nplayers = nplayers.min(MAX_GAME_SIZE - 1);
+        games_by_size[nplayers] += 1;
+
+        let players = comp.iter().map(|x| graph[*x]).collect::<Vec<_>>();
+
+        let index2name = players.iter().map(|x| *x).collect::<Vec<_>>();
+        let agents = index2name.iter().map(|x| player_plans[*x].clone()).collect::<Vec<_>>();
+
+        let eg = ExtractedGame {
+            setup: ArbSetup {
+                agents,
+            },
+            index2name,
+        };
+
+        res.push(eg);
+
+        // eprintln!("comp #{a}: {:?}", comp);
+
+        // if comp.len() > 1 {
+        //
+        //
+        //
+        //     games_by_size[comp.len()] += 1;
+        // }
+    }
+    res
+}
+
 impl World {
     pub fn size(&self) -> Size {
         self.grid.size
@@ -534,13 +621,6 @@ impl World {
         cell.is_allowed(coords.orientation)
     }
 
-    // pub fn next_coords_ref(&self, coords: &Coords, action: Actions) -> Coords {
-    //     let mut nex = next_coords(coords, action);
-    //     let s = self.grid.size;
-    //     nex.xy.x = (nex.xy.x + s.x) % s.x;
-    //     nex.xy.y = (nex.xy.y + s.y) % s.y;
-    //     nex
-    // }
 
     pub fn allowed_robot_actions_if_empty(&self, coords: &Coords) -> Vec<Actions> {
         let cell = self.grid.get_cell(&coords.xy);
@@ -553,20 +633,6 @@ impl World {
                 all_actions.push(Actions::from_index(i));
             }
         }
-
-        //
-        // if cell.allowed_turn_right[coords.orientation as usize] {
-        //     all_actions.push(Actions::TurnRight);
-        // }
-        //
-        // if cell.allowed_turn_left[coords.orientation as usize] {
-        //     all_actions.push(Actions::TurnLeft);
-        // }
-        //
-        // if cell.allowed_go_backward {
-        //     all_actions.push(Actions::Backward);
-        // }
-
         // which ones are feasible
         let mut available_actions = Vec::new();
         for action in all_actions.iter() {
@@ -575,7 +641,6 @@ impl World {
                 available_actions.push(*action);
             }
         }
-        // if available_actions.is_empty() {
         available_actions.push(Actions::Wait);
         available_actions
     }
@@ -611,121 +676,115 @@ impl World {
         robot.coords = dest;
     }
     pub fn step_robots(&mut self, f: &mut FNUpdate, rng: &mut RNG) {
-        let mut resource_usage: HashMap<(usize, XYCell), HashSet<usize>> = HashMap::new();
+        let nrobots = self.robots.len();
+        let mut resource_usage: HashMap<(StepIndex, XYCell), HashSet<RobotName>> = HashMap::new();
 
-        // let mut next_occ: Vec<Vec<Option<HashSet<usize>>>> =
-        //     Vec::with_capacity(self.grid.size.x as usize);
-        //
-        // for _ in 0..self.grid.size.x {
-        //     let mut row = Vec::with_capacity(self.grid.size.y as usize);
-        //     for _ in 0..self.grid.size.y {
-        //         row.push(None);
-        //     }
-        //     next_occ.push(row);
-        // }
 
-        let mut proposed_next_coords: Vec<Coords> = Vec::with_capacity(self.robots.len());
+        let mut players_plans: Vec<ArbAgent> = Vec::with_capacity(nrobots);
+
+        // let mut proposed_next_coords: Vec<Coords> = Vec::with_capacity(nrobots);
 
         let horizon = 5;
 
         for (a, robot) in self.robots.iter().enumerate() {
-            let available_actions = self.allowed_robot_actions_if_empty(&robot.coords);
+            let plan = f(rng, a, robot, horizon);
+            assert_eq!(plan.len(), horizon);
 
-            let mut actions = f(rng, a, robot, horizon);
-            assert_eq!(actions.len(), horizon);
-
-            // if !available_actions.contains(&actions[0]) {
-            //     actions = vec![Actions::Wait; horizon];
-            // }
-            //
-            // if rng.gen_bool(0.4) {
-            //     actions = vec![Actions::Wait; horizon];
-            // }
-
-            let horizon_coords = simulate(robot.coords, &actions);
+            let horizon_coords = simulate(robot.coords, &plan);
             for (dt, c) in horizon_coords.iter().enumerate() {
                 let resource = (0, c.xy);
                 resource_usage
                     .entry(resource)
-                    .or_insert_with(HashSet::new)
+                    .or_default()
                     .insert(a);
             }
 
-            let first = actions[0];
-            let mut nex = next_coords(&robot.coords, first);
+            let aa = ArbAgent {
+                coord: robot.coords,
+                plan,
+            };
+            players_plans.push(aa);
+        }
+
+
+        let games = find_clusters(&players_plans, &resource_usage);
+
+
+        let max_permutations = 100000;
+        let mut actions = Vec::with_capacity(nrobots);
+        for i in 0..nrobots {
+            actions.push(Actions::Wait);
+        }
+
+        for eg in &games {
+            let setup = &eg.setup;
+            let index2name = &eg.index2name;
+            let arb_result0 = find_feasible_plans(&setup, max_permutations);
+            let arb_result=arb_result0.remove_redundant(  rng);
+            if arb_result.solutions.len() > 1 {
+                eprintln!("game: {:?}", setup);
+
+                eprintln!("result: {:?}", arb_result);
+            }
+
+            let solution = arb_result.pick_one(rng);
+
+            for (i, name) in solution.robots.iter().enumerate() {
+                let name = index2name[i];
+                let action = solution.robots[i].plan[0];
+                actions[name] = action;
+            }
+
+        }
+        let mut indices: Vec<usize> = (0..nrobots).collect();
+        indices.shuffle(rng);
+
+        for a in indices {
+            let action = actions[a];
+
+            let robot = &self.robots[a];
+
+            let nex = next_coords(&robot.coords, action);
 
             let cell = self.grid.get_cell_mut(&robot.coords.xy);
 
             match cell.present {
-                None => {}
+                None => {},
                 Some(robot_name) => {
                     if robot_name == a {
                         // panic!("Robot {} is not in cell {:?}", a, robot.coords.xy);
                     } else {
-                        nex = robot.coords;
+                        eprintln!("Robot {} cannot go to  cell {:?}", a, cell);
+
+                        // nex = robot.coords;
+                        continue
+
                     }
-                }
+                },
             }
-            proposed_next_coords.push(nex);
+            self.move_robot(a, nex);
         }
+        //
+        //
+        // // random permutation of 0, n
 
-        let mut graph = UnGraph::<usize, ()>::new_undirected();
-
-        // find the clusters of interacting robots
-        let mut indices = Vec::with_capacity(self.robots.len());
-        for a in 0..self.robots.len() {
-            indices.push(graph.add_node(a));
-        }
-        for (resource, known) in resource_usage.iter() {
-            for p1 in known {
-                for p2 in known {
-                    let n1 = indices[*p1];
-                    let n2 = indices[*p2];
-                    graph.add_edge(n1, n2, ());
-                }
-            }
-        }
-        let components = find_connected_components(&graph);
-        const MAX_GAME_SIZE: usize = 32;
-        // eprintln!("resources {:?}", resource_usage);
-        let mut games_by_size = [0; MAX_GAME_SIZE];
-        for (a, comp) in components.iter().enumerate() {
-            let nplayers = comp.len();
-
-            let nplayers = nplayers.min(MAX_GAME_SIZE - 1);
-            games_by_size[nplayers] += 1;
-            // eprintln!("comp #{a}: {:?}", comp);
-
-            // if comp.len() > 1 {
-            //
-            //
-            //
-            //     games_by_size[comp.len()] += 1;
-            // }
-        }
-        eprintln!("games_by_size: {:?}", games_by_size);
-
-        // random permutation of 0, n
-        let mut indices: Vec<usize> = (0..self.robots.len()).collect();
-        indices.shuffle(rng);
-
-        for a in indices {
-            let proposed_next_coord = proposed_next_coords[a];
-
-            // check if its empty
-            let cell = self.grid.get_cell_mut(&proposed_next_coord.xy);
-
-            match cell.present {
-                None => {}
-                Some(robot_name) => {
-                    if robot_name == a {
-                    } else {
-                        continue;
-                    }
-                }
-            }
-            self.move_robot(a, proposed_next_coord);
-        }
+        //
+        // for a in indices {
+        //     let proposed_next_coord = proposed_next_coords[a];
+        //
+        //     // check if its empty
+        //     let cell = self.grid.get_cell_mut(&proposed_next_coord.xy);
+        //
+        //     match cell.present {
+        //         None => {}
+        //         Some(robot_name) => {
+        //             if robot_name == a {} else {
+        //                 continue;
+        //             }
+        //         }
+        //     }
+        //     self.move_robot(a, proposed_next_coord);
+        // }
     }
 }
 
@@ -822,6 +881,7 @@ impl fmt::Debug for Actions {
         }
     }
 }
+
 pub const NUM_ACTIONS: usize = 5;
 pub const NUM_ORIENTATIONS: usize = 4;
 

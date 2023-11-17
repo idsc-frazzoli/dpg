@@ -281,12 +281,13 @@ impl SimpleAgent {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut rng: RNG = rand::thread_rng();
-    let s = 3;
+    let s = 1;
     // let s = 1;
     let ndays = 1.0;
-    let ndays = 1.0 / 24.0;
+    let ndays = 1.0 / 24.0 / 10.0;
 
-    let map_size = Size::new(8 * s, 6 * s);
+    let border = 1;
+    let map_size = Size::new(border*2 + 4 * s, border*2 + 3 * s);
     let block_size = Size::new(16, 16);
     let parking_interval = 1;
     let robots_density = 0.8;
@@ -317,8 +318,11 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
     eprintln!("{} parking spaces", nparkings);
-    let nrobots = (nparkings as f64 * robots_density / 2.0) as usize;
+    let nrobots = (nparkings as f64 * robots_density / 2.0).ceil() as usize;
     // let nrobots = 16;
+    if nrobots == 0 {
+        panic!("No robots");
+    }
     let speed_km_h = 30.0;
     let speed_m_s = speed_km_h * 1000.0 / 3600.0;
     let size_cell_m = 5.0;
