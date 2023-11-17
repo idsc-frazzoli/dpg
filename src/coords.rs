@@ -6,7 +6,7 @@ use std::ops::{Add, Sub};
 use num::integer::sqrt;
 use num::Num;
 use petgraph::graph::{NodeIndex, UnGraph};
-use petgraph::visit::{Dfs};
+use petgraph::visit::Dfs;
 use rand::prelude::IteratorRandom;
 use rand::rngs::ThreadRng;
 // Rng trait must be in scope to use random methods
@@ -42,7 +42,6 @@ impl Orientations {
             }
         }
     }
-
 
     pub fn angle(&self) -> u16 {
         match self {
