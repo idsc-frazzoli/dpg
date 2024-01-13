@@ -281,17 +281,19 @@ impl SimpleAgent {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let mut rng: RNG = rand::thread_rng();
-    let s = 1;
+    let sx = 2;
+    let sy = 2;
+
     // let s = 1;
     let ndays = 1.0;
     let ndays = 1.0 / 24.0 / 10.0;
 
     let border = 1;
-    let map_size = Size::new(border*2 + 4 * s, border*2 + 3 * s);
+    let map_size = Size::new(border*2 + sx, border*2 + sy);
     let block_size = Size::new(16, 16);
     let parking_interval = 1;
     let robots_density = 0.8;
-
+    let prob_parking = 1.0;
     let mut bl = BlockMap::new(map_size, block_size);
 
     for p in map_size.iterate_xy_interior() {
@@ -301,7 +303,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         if rng.gen_bool(0.0) {
             continue;
         } else {
-            let b = if rng.gen_bool(0.6) {
+            let b = if rng.gen_bool(prob_parking) {
                 Block::with_parking(block_size, parking_interval, &mut rng)
             } else {
                 Block::basic_with_roads(block_size, &mut rng)
